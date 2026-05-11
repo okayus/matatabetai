@@ -8,8 +8,9 @@ Last updated: 2026-05-11
 
 - リポジトリ初期化（`main` ブランチ、private GitHub repo に push 済み）
 - `okayus-skills` から 4 つのスキルを project スコープでインストール
-- CLAUDE.md に製品意図・対象・命名経緯を記録
+- CLAUDE.md に製品意図・対象・命名経緯、コーディング思想（DMMF）、開発ワークフローを記録
 - ドメイン候補確認: `matatabetai.{app,com,jp,...}` すべて空き（**未取得**）
+- main 直 commit/push 防止: Claude Code `PreToolUse` hook で実装（private repo のため branch protection が使えない代替）
 
 ## 次のアクション（直近1-2手）
 
