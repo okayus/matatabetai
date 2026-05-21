@@ -38,6 +38,11 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する。
 - 本番 DB は `matatabetai` 単一でスタート。staging/preview が必要になった時点で `matatabetai-staging` を追加する（命名の非対称性は許容）
 - 改名は wrangler.jsonc が `database_id` 参照のため低コスト。最初から env suffix を切る必要はない
 
+**RP_ID / ORIGIN:**
+- 本番 Worker ホスト（workers.dev サブドメイン）に**固定済**。WebAuthn 採用時の credential 不変性ルールに従い、ホスト変更は破壊的（既存 credential が全て無効化）扱い
+- custom domain に移行する場合は、credential 移行戦略（既存 credential 諦め or 並行運用）を別途検討する必要がある
+- ローカル開発で localhost を使いたい場合は `packages/web/.dev.vars` 側で上書きする
+
 ## 命名の経緯
 
 候補から「Mata Tabetai」を選んだ理由：
