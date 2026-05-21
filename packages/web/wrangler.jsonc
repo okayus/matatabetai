@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "matatabetai",
+  "compatibility_date": "2025-03-28",
+  "main": "./worker/index.ts",
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "vars": {
+    // 初期値は localhost。Phase 4 で本番 workers.dev ホストに固定する。
+    // 一度本番に固定したら RP_ID は不変扱い（WebAuthn 採用時に既存 credential が無効化されるため）。
+    "RP_ID": "localhost",
+    "ORIGIN": "http://localhost:5173"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "matatabetai",
+      "database_id": "58a6232f-2847-4f9b-936f-725704d1fb61",
+      "migrations_dir": "drizzle"
+    }
+  ]
+}
