@@ -49,3 +49,14 @@ nyalog は「家族 = 暗黙の 1 テナント」から per-space へ後付け�
 - 家族 = 1 テナント固定のデータモデル — 後付け移行のコストを既に払った経験から却下
 - Cloudflare Images（stored）— 家族規模に対して固定費が過剰
 - ホストでの直接開発 — サプライチェーン対策上却下（全プロジェクト共通）
+
+## 改訂（2026-08-23）: push / PR 経路を host relay から「1 リポ限定 PAT を 1Password で注入」へ
+
+§5 の「ホストの systemd リレー（GitHub App）が `claude/*` を代行する」を撤回し、okayus-skills `sandboxed-agent-github-token-via-1password`（mazuoboeru・kokemusu で 2026-08-22 に E2E 済み）を採用する。
+
+- **仕組み**: `./up.sh` = `op run --env-file=.docker/sandbox.env -- docker compose up -d`。matatabetai 1 リポだけに届く GitHub fine-grained PAT（Contents + Pull requests、Workflows なし、90 日）を 1Password から解決してコンテナの env にだけ注入する。git の credential helper は env を echo する inline 関数、`gh` は `GH_TOKEN` を直接読む。ディスクには何も残らず、`op run` を通さない起動は token なし（fail closed）
+- **理由**: relay は credential を境界の外に置ける代わりに、プロジェクトごとの GitHub App・秘密鍵・systemd timer・`Relay-Merge` トレーラーという可動部を持つ。家族用の solo プロジェクトではこの重さが見合わない。agent が `gh pr create` / `gh pr checks` を直接使えるのも利点
+- **失うもの**: compromised sandbox が「CI green の PR を merge できる」「非保護ブランチへ push できる」残余リスク。許容できなくなったら relay に戻す（skill の migration 手順）
+- **このリポ固有の注意**: **private リポは Free プランでは ruleset / branch protection が効かない**。token 経路の本来の境界（ruleset + token scope）のうち ruleset 側が無く、main を守るのは hook と Claude Code の deny（force push / `main` / `gh pr merge` / `gh api`）だけになる。public 化（nyalog / mazuoboeru / kokemusu と同じ）すれば `protect-main` ruleset（PR 必須 + `ci` check + bypass なし）が効く — PROGRESS.md の未決事項
+- **merge ポリシー**: 人間がホストで merge（既定）。agent に依頼させるなら `gh pr merge --auto --squash` のみ allow + repo の auto-merge を有効化
+- relay 用に置いた `~/.config/matatabetai-relay/` と systemd units は撤去済み（GitHub App は未作成だったので戻し道は不要）

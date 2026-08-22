@@ -26,3 +26,7 @@ docker-compose.override.yml
 
 # D1 backups (manual operations) — never commit, may contain user data
 backups/
+
+# 1Password secret REFERENCE for the sandbox GitHub token (host-specific vault/item).
+# Never a value — but still per-host. Template: .docker/sandbox.env.example
+.docker/sandbox.env

@@ -138,6 +138,12 @@ done
 #       → Claude Code usage telemetry uploads (model picker works without them;
 #         gates arrive via api.anthropic.com)
 #   matatabetai.shiraoka.workers.dev
+#   - Documentation hosts the in-container agent reads (Context7 MCP, MDN,
+#     react/hono/drizzle/vite/vitest/zod llms.txt, Chrome/web.dev) — skill
+#     cloudflare-mcp-claude-tooling. IP-based allowlisting means the shared anycast
+#     IPs (Cloudflare, Vercel, Fastly, Google) admit sibling sites too — accepted for
+#     read-only docs. mcp.context7.com is an AWS ELB whose IPs can rotate; if
+#     Context7 stops answering, restart the container to re-resolve.
 #       → production host, lets the in-container agent verify deploys
 #         (e.g. curl -s .../api/auth/me → 401 = serving)
 #   cdn.playwright.dev / playwright.download.prss.microsoft.com
@@ -155,7 +161,17 @@ for domain in \
     "prodregistryv2.org" \
     "matatabetai.shiraoka.workers.dev" \
     "cdn.playwright.dev" \
-    "playwright.download.prss.microsoft.com"; do
+    "playwright.download.prss.microsoft.com" \
+    "mcp.context7.com" \
+    "developer.mozilla.org" \
+    "react.dev" \
+    "hono.dev" \
+    "orm.drizzle.team" \
+    "vite.dev" \
+    "vitest.dev" \
+    "zod.dev" \
+    "developer.chrome.com" \
+    "web.dev"; do
     echo "Resolving optional $domain..."
     ips=""
     for attempt in 1 2 3; do

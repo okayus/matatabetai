@@ -73,30 +73,31 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 
 ### 開発環境の前提（ADR-001）
 
-開発は **egress 制限つき Docker サンドボックス内**で行う（[docs/local-dev.md](./docs/local-dev.md)、skill `claude-code-docker-sandbox`）。コンテナには credential が一切無い: `git push` は deny かつ不可能、`gh` は未認証で動かない、`wrangler login` はしない。push / PR / merge はホスト側リレーか人間が担う。
+開発は **egress 制限つき Docker サンドボックス内**で行う（[docs/local-dev.md](./docs/local-dev.md)、skill `claude-code-docker-sandbox`）。起動は **`./up.sh`**（= `op run --env-file=.docker/sandbox.env -- docker compose up -d`）。コンテナが持つ credential は **matatabetai 1 リポ限定の GitHub fine-grained PAT**（Contents + Pull requests、Workflows なし、90 日）だけで、env にのみ存在しディスクには書かない（skill `sandboxed-agent-github-token-via-1password`、ADR-001 改訂）。Cloudflare のトークンは持たず `wrangler login` もしない。merge は人間がホストで行う。
 
 - ホストで `pnpm` / `npx` / `wrangler` などを直接叩かない（`.claude/hooks/require-container.py` が止める）。`docker compose exec dev <cmd>` 経由で実行する
-- PR / CI の状態確認は **`scripts/ci-status.sh`**（`--watch` で決着まで待つ）。**追いコミット後は branch でなく sha で引く**（リレーが push する前の古い sha の結果を掴む事故を防ぐ — スクリプトは HEAD の sha 固定）。リポジトリが private の間は未認証 REST が 404 を返すので、ホストで `GH_TOKEN=$(gh auth token)` を付けて実行する
-- merge 後の deploy 完了は GH Actions の run（ホストで `gh run list`）で確認する
+- PR / CI の状態は **`gh pr view` / `gh pr checks`**（fine-grained PAT は Checks REST API を呼べないので `gh api …/check-runs` は使わない。`gh api` は deny）
+- merge 後の deploy 完了は `gh run list` / `gh run view` と本番 `/health`（`https://matatabetai.shiraoka.workers.dev/health`）で確認する
 
 ### ブランチ戦略
 
-`main` への直接 commit/push は hook（`.claude/hooks/block-main-commit.sh`）で禁止。すべての変更は PR 経由で squash merge する。
+`main` への直接 commit/push は hook（`.claude/hooks/block-main-commit.sh`）と `.claude/settings.json` の deny で禁止。すべての変更は PR 経由で squash merge する。**リポジトリが private の間、GitHub 側の ruleset は効かない（Free プラン）** — main を守っているのは hook と deny だけなので、public 化（PROGRESS.md）までは特に慎重に。
 
 **サンドボックス内エージェント**（コンテナ内 claude）の作業フロー:
 
-1. **ブランチ作成**: `git switch -c claude/<type>-<short-description>`。`claude/*` 以外はリレーが push を拒否する
-2. **実装と commit**: commit までがエージェントの仕事。push はしない — ホスト側リレー（systemd timer, 60 秒間隔）が自動 push し、PR を作成する。**リレーが未稼働の間は人間がホストで push / PR する**（PROGRESS.md の手順で有効化）
-3. **CI 確認**: `scripts/ci-status.sh --watch`。red なら直して commit を積む
-4. **マージ**: 確信のある完成した変更のみ、最終 commit メッセージ末尾に `Relay-Merge: yes` トレーラーを付けると CI green 後にリレーが squash merge する。迷う変更・影響の大きい変更には付けない。**migration（`drizzle/` の変更）を含む PR には絶対に付けない** — merge は本番 D1 への migration 適用まで直結する（nyalog の D1 CASCADE 事故: skill `cloudflare-d1-drizzle-migration`）
-   - push 済みの後からマージを頼む時は amend せず空 commit でトレーラーを出す（リレーは exact refspec のみ push、force しない）
-5. **PROGRESS 更新**: 大きな節目（機能完成、フェーズ移行、後回し判断）で [PROGRESS.md](./PROGRESS.md) を併せて更新する。PR の一部に含めて良い
+1. **ブランチ作成**: `git switch -c claude/<type>-<short-description>`
+2. **実装と commit**: 小さく積む。`.github/workflows/**` は変更しない（token に `workflows` 権限が無く push が拒否される。人間がホストで行う）
+3. **push と PR**: `git push -u origin claude/<branch>` → `gh pr create --fill`（計画・確認内容を本文に）→ **PR の URL を報告する**
+4. **CI 確認**: `gh pr checks --watch`。red なら直して commit を積む
+5. **merge はしない**: 人間がホストでレビューして squash merge する（`gh pr merge` / `gh api` は deny）。migration（`drizzle/` の変更）を含む PR は merge が本番 D1 への適用まで直結するので、PR 本文に backup 手順を書く（skill `cloudflare-d1-drizzle-migration`）
+6. **PROGRESS 更新**: 大きな節目で [PROGRESS.md](./PROGRESS.md) を併せて更新する。PR の一部に含めて良い
+7. **token の扱い**: `GH_TOKEN` はこのプロジェクトの repo-scoped token。表示しない、`gh auth login` しない、URL に埋めない。起動ログに `NOTE: GH_TOKEN absent` が出ていたら push できない（`./up.sh` で起動し直すのは人間）
 
-**ホストでの作業**（人間）: `git switch -c <type>/<short-description>` → 空コミット → 計画を本文に書いた Draft PR → 実装 → squash merge。
+**ホストでの作業**（人間）: `git switch -c <type>/<short-description>` → 実装 → PR → squash merge → `git fetch --prune`（merge 後のリモートブランチは `delete_branch_on_merge` で消える）。
 
 ### ブランチ命名規則
 
-- `claude/<type>-<desc>` — サンドボックス内エージェントの作業（リレーが push/PR を代行する唯一の prefix）
+- `claude/<type>-<desc>` — サンドボックス内エージェントの作業（settings の allow は `git push origin claude/*` のみ）
 - `feat/` / `fix/` / `refactor/` / `chore/` / `docs/` — ホストでの作業
 
 ### コミットメッセージ
@@ -109,11 +110,13 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 - このプロジェクトは `cloudflare-workers-passkey-auth` / `cloudflare-workers-space-membership-invite` / `cloudflare-r2-private-image-upload` の**最初の利用者**で、各 SKILL.md の `## Unverified claims — confirm while implementing, then write back` 節が還元チェックリスト
   - **還元のルール**: 実装中に `UNVERIFIED:` 項目を確認・訂正したら、**その場で** `~/.claude/skills/<skill>/SKILL.md`（= ホストの okayus-skills）を直し、`(verified YYYY-MM-DD in matatabetai)` を添えて `metadata.version` を上げる。commit / PR はホスト側で `cd ../okayus-skills` して行う（`feat(<skill>): … を還元`）。このリポジトリの PR とは別
   - 新しい罠を踏んだら同じ skill の pitfalls に追記する。skill に無い新しい話題（例: OGP 取得）は新 skill 候補として PROGRESS.md に書く
-- **third-party skill** は `.claude/skills/` に実体を vendoring する（symlink にしない）。コンテナ内で `docker compose exec dev npx -y skills@latest add <owner>/<repo> -y -s <skill> --copy`。`skills-lock.json` を commit、更新は単独 PR
+- **third-party skill** は `.claude/skills/` に実体を vendoring する（symlink にしない）。コンテナ内で `npx skills add <owner>/<repo>@<skill> -a claude-code -y`。`skills-lock.json` を commit、更新は単独 PR
+- **公式ドキュメントの調べ方（3 層。事前学習の記憶で API を断定しない）**: ① `context7` MCP（`resolve-library-id` → `query-docs`。MDN / Hono / Drizzle / React / Vite / Cloudflare Workers を横断）— Cloudflare は `cloudflare-docs` MCP を最優先 ② `llms.txt` の直読み（WebFetch: `hono.dev/llms.txt` `orm.drizzle.team/llms.txt` `react.dev/llms.txt` `vite.dev/llms.txt` `vitest.dev/llms.txt` `zod.dev/llms.txt` `developers.cloudflare.com/llms.txt`。目次 → 必要ページ。`llms-full.txt` は巨大なので最後） ③ WebSearch → WebFetch（WebSearch は Anthropic 側で実行され egress 不要。URL が firewall の allowlist 外なら取得できないので ① に戻る）
+- **HTML / CSS / UI を書く前に `modern-web-guidance` を読む**（project scope `.claude/skills/modern-web-guidance/` に同梱。`search` / `retrieve` は `npx -y modern-web-guidance@latest …` を実行する）
 
 ### 次の実装セッションの段取り
 
-1. **ツールチェーン更新 + CI**（chore PR）: wrangler 3 → 4、`@cloudflare/vite-plugin` 0.1 → 1.x、pnpm 9 → 10、node 22 → 24、`@cloudflare/workers-types` → `wrangler types`（skill `cloudflare-workers-deploy-skeleton` の現行基準）。`.github/workflows/ci.yml`（job 名 `ci`: `pnpm check` + unit test）を追加
+1. **ツールチェーン更新 + CI**（chore PR）: wrangler 3 → 4、`@cloudflare/vite-plugin` 0.1 → 1.x、pnpm 9 → 10、node 22 → 24、`@cloudflare/workers-types` → `wrangler types`（skill `cloudflare-workers-deploy-skeleton` の現行基準）。`.github/workflows/ci.yml`（job 名 `ci`: `pnpm check` + unit test）を追加 — **workflow ファイルは token で push できないので、この部分は人間がホストから push する**
 2. `cloudflare-workers-passkey-auth` + `cloudflare-workers-space-membership-invite` — 認証・スペース・招待
 3. ドメイン: meals / tags / meal_tags / またたべたい（[docs/requirements.md](./docs/requirements.md) の設計メモ）
 4. `cloudflare-r2-private-image-upload` — 写真（要: ホストで `wrangler r2 bucket create matatabetai-photos`、deploy token に `Workers R2 Storage: Edit`）
@@ -172,7 +175,7 @@ function createMealRecord(input: unknown): Result<MealRecord, ValidationError> {
 
 ### フロントエンド
 
-家族数人がスマホで使う。Baseline Newly available まで採用してよいが polyfill と重い fallback は入れない。`vercel-react-best-practices`（okayus-skills 経由）と、導入後は `modern-web-guidance` を引く。
+家族数人がスマホで使う。Baseline Newly available まで採用してよいが polyfill と重い fallback は入れない。`vercel-react-best-practices`（okayus-skills 経由）と `modern-web-guidance`（同梱済み）を引く。
 
 ## テスト方針
 
