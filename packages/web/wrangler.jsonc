@@ -11,8 +11,8 @@
   "vars": {
     // RP_ID は本番ホストに固定済（WebAuthn 採用時の credential 不変性のため、ここを変えると全 credential が無効化）。
     // ローカル開発で localhost ホスト名を使いたい場合は packages/web/.dev.vars 側で上書きする。
-    "RP_ID": "matatabetai.toshiaki-mukai-9981.workers.dev",
-    "ORIGIN": "https://matatabetai.toshiaki-mukai-9981.workers.dev"
+    "RP_ID": "matatabetai.shiraoka.workers.dev",
+    "ORIGIN": "https://matatabetai.shiraoka.workers.dev"
   },
   "d1_databases": [
     {

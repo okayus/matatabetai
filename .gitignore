@@ -2,10 +2,27 @@ node_modules/
 dist/
 .wrangler/
 .vite/
+# サンドボックス内 pnpm の store (bind mount 上だと hardlink 先が workspace 内になる)
+.pnpm-store/
 .dev.vars
 .env
 .env.local
 *.log
 .DS_Store
+.playwright-mcp/
+playwright-report/
+test-results/
 
+# Claude Code: skills / hooks はコミット対象、個人設定と下書きプランは除外
 .claude/settings.local.json
+.claude/plans/
+.claude/.hook-log
+
+# dev sandbox: ホスト固有パスを含むローカル override (okayus-skills マウント)
+docker-compose.override.yml
+
+# `npx skills add` のローカルキャッシュ（実体は .claude/skills/ に置く）
+.agents/
+
+# D1 backups (manual operations) — never commit, may contain user data
+backups/
