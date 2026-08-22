@@ -1,9 +1,12 @@
 # Drives Anthropic's published devcontainer image (.docker/Dockerfile) without
-# VS Code. Bring up with `docker compose up -d`, then `docker compose exec dev zsh`.
+# VS Code. Start with ./up.sh (resolves the sandbox GitHub token from 1Password),
+# then `docker compose exec dev zsh`. A plain `docker compose up -d` also works but
+# leaves the container WITHOUT a token (it can commit, not push) — by design.
 #
-# Project: matatabetai. Security model: ADR-001 — the container holds ZERO
-# credentials (no Cloudflare token, no GitHub token, no wrangler login);
-# egress is default-deny via .docker/init-firewall.sh.
+# Project: matatabetai. Security model: ADR-001 (改訂 2026-08-23) — the container
+# holds ONE credential, a repo-scoped GitHub fine-grained PAT in env only (no
+# Cloudflare token, no wrangler login); egress is default-deny via
+# .docker/init-firewall.sh.
 services:
   dev:
     build:
@@ -54,8 +57,8 @@ services:
       # wrangler runs purely local here (ADR-001): silence its telemetry so it
       # doesn't poke the firewalled sparrow.cloudflare.com on every command.
       WRANGLER_SEND_METRICS: "false"
-      # Distinguishable git identity for in-container commits (the relay pushes
-      # them as-is). Compose env survives container recreation — a global
+      # Distinguishable git identity for in-container commits (pushed as-is with the
+      # repo-scoped token). Compose env survives container recreation — a global
       # .gitconfig in the container layer would not, and writing user.name into
       # the bind-mounted .git/config would leak into host commits.
       GIT_AUTHOR_NAME: "Claude (matatabetai sandbox)"
@@ -64,6 +67,16 @@ services:
       GIT_COMMITTER_EMAIL: "claude-matatabetai-sandbox@users.noreply.github.com"
       POWERLEVEL9K_DISABLE_GITSTATUS: "true"
       TZ: Asia/Tokyo
+      # Repo-scoped GitHub fine-grained PAT (okayus/matatabetai only; Contents + Pull
+      # requests; no Workflows; 90-day expiry). No value here on purpose: compose
+      # resolves it from the `docker compose` process env — i.e. from `op run` in
+      # ./up.sh — and REMOVES the key when unset, silently, so a plain
+      # `docker compose up -d` yields a container that can commit but not push
+      # (fail closed; the startup NOTE below is the only signal). The token lives
+      # only in 1Password (.docker/sandbox.env holds the op:// reference) and in
+      # this container's env; nothing writes it to disk.
+      # Skill: sandboxed-agent-github-token-via-1password.
+      GH_TOKEN:
     ports:
       # host:container — host 5573 avoids collision with other local dev servers
       # (5173 = generic Vite, 5273 = kokemusu, 5373 = mazuoboeru, 5473 = nyalog).
@@ -78,15 +91,22 @@ services:
     #   auto-updater's download host (downloads.claude.ai) is outside the egress allowlist.
     # - pnpm lives in the container layer and vanishes on recreation, so reinstall it too
     #   (pnpm@10 to match CI's pnpm/action-setup version).
+    # - git: credential helper = inline sh that echoes $GH_TOKEN at push time (nothing
+    #   under ~/.git-credentials). ~/.gitconfig is container-layer, so it is re-applied
+    #   every start. `$$` = literal `$` (compose interpolates `$VAR` at parse time).
+    #   The sandbox git identity comes from the GIT_* env above.
     # - defaultMode=bypassPermissions is written into the CONTAINER-scope user settings
     #   (named volume), NOT the repo-shared .claude/settings.json — host sessions keep
     #   normal prompting. Safe here because the firewall is the boundary and deny rules
-    #   (git push) still apply in bypass mode.
+    #   (force push / main / gh pr merge / gh auth / gh api) still apply in bypass mode.
     # - No step may kill the container on failure (fall back to image-baked versions).
     command: >
       sh -c "sudo /usr/local/bin/init-firewall.sh &&
              (npm i -g @anthropic-ai/claude-code@latest pnpm@10 ||
               echo 'WARN: claude/pnpm update failed; using image-baked versions') &&
+             (git config --global credential.helper '!f() { echo username=x-access-token; echo \"password=$$GH_TOKEN\"; }; f' ||
+              echo 'WARN: git credential helper setup failed') &&
+             ([ -n \"$$GH_TOKEN\" ] || echo 'NOTE: GH_TOKEN absent - this container can commit but NOT push. Start it via ./up.sh') &&
              ([ -s /home/node/.claude/settings.json ] || echo '{}' > /home/node/.claude/settings.json) &&
              (jq '.permissions.defaultMode = \"bypassPermissions\"' /home/node/.claude/settings.json > /tmp/cs.json &&
               mv /tmp/cs.json /home/node/.claude/settings.json ||
