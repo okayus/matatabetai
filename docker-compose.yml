@@ -20,7 +20,8 @@ services:
         # Playwright e2e, both baked at build time (see Dockerfile).
         INSTALL_BROWSER_DEPS: "true"
         # Keep in sync with the web package's devDependency @playwright/test.
-        PLAYWRIGHT_VERSION: "1.59.1"
+        # 1.59.1 hangs after the chromium download on node:24 (2026-08-22) — stay on >= 1.62.1.
+        PLAYWRIGHT_VERSION: "1.62.1"
     container_name: matatabetai-dev
     # Required so init-firewall.sh can program iptables/ipset.
     cap_add:
