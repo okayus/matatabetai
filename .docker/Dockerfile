@@ -119,7 +119,9 @@ RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 # both together, then rebuild — a version mismatch shows up as "Executable
 # doesn't exist at .../chromium-XXXX" when running e2e. Runs as `node`, so the
 # browser lands in /home/node/.cache/ms-playwright, readable by the agent.
-ARG PLAYWRIGHT_VERSION=1.59.1
+# 1.59.1 is known-bad on node:24: `install chromium` hangs forever right after
+# the download completes (node:22 is fine; 2026-08-22). 1.62.1 works on node:24.
+ARG PLAYWRIGHT_VERSION=1.62.1
 RUN if [ "$INSTALL_BROWSER_DEPS" = "true" ]; then \
       npx -y playwright@${PLAYWRIGHT_VERSION} install chromium ; \
     fi

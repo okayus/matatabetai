@@ -23,7 +23,7 @@ docker compose exec dev zsh     # コンテナに入る (workspace = リポジ�
 
 ## Playwright e2e
 
-chromium は image に焼き込み済み（`PLAYWRIGHT_VERSION` build arg = `1.59.1`）。web パッケージの `@playwright/test` を同じバージョンに pin し、上げるときは両方を同時に上げて `docker compose build`。実行方法は okayus-skills `cloudflare-workers-e2e-playwright` / `playwright-e2e-in-docker-sandbox` を参照（`wrangler dev --persist-to .wrangler/state --ip 127.0.0.1`、rate-limit binding を外した e2e 用 config）。
+chromium は image に焼き込み済み（`PLAYWRIGHT_VERSION` build arg = `1.62.1`。1.59.1 は node:24 だと `install chromium` がダウンロード完了直後に永遠に止まる（node:22 では問題なし、2026-08-22 確認）ので使わない）。web パッケージの `@playwright/test` を同じバージョンに pin し、上げるときは両方を同時に上げて `docker compose build`。実行方法は okayus-skills `cloudflare-workers-e2e-playwright` / `playwright-e2e-in-docker-sandbox` を参照（`wrangler dev --persist-to .wrangler/state --ip 127.0.0.1`、rate-limit binding を外した e2e 用 config）。
 
 ## トラブルシューティング
 
