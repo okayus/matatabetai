@@ -1,6 +1,12 @@
 # Mata Tabetai (またたべたい)
 
-> **最初に [PROGRESS.md](./PROGRESS.md) を読むこと**。現在の進捗・次のアクション・未決事項はそこに記録されている。本ファイルは恒久的な意図のみを記述する。要件の正典は [docs/requirements.md](./docs/requirements.md)、根幹の決定は [docs/adr/](./docs/adr/)。
+このファイルは**規約と目次だけ**（コンテナ内も含めどのセッションでも最初に読まれる）。進捗と次の一手は `docs/status.md`（SessionStart hook が自動注入）、履歴は `docs/log.md` と git、段取りは `docs/roadmap.md`、要件の正典は `docs/requirements.md`、決定は `docs/adr/`。**ここに進捗・履歴・完了報告を書かない。**
+
+## 進捗の持ち方（status hub）
+
+- `docs/status.md` = いまのハブ。**40 行 / 3 KB 上限**、見出しは「フェーズ / 次の 3 手 / 詰まり・人手待ち / 進行中 PR」の 4 つ固定。終わった項目は消して `docs/log.md` の先頭へ 1 行（取り消し線は禁止）。8 行を超える節は `docs/plans/<topic>.md` に切り出し、完了したら削除。
+- セッションの区切りでユーザが `/handoff` を打つ（書き換え → log → `.claude/hooks/check-status.sh` → commit）。CI も同じ検査を走らせる。
+- `/compact` するときは、変更したファイル一覧と「次の 3 手」の 1 手目を必ず要約に残す。
 
 ## このアプリは何のためにあるか
 
@@ -55,19 +61,11 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 
 **デプロイ:**
 
-- 現状は GH Actions `deploy.yml`（`CLOUDFLARE_API_TOKEN` secret）で `main` push → D1 migrations → deploy。Workers Builds（キーレス、skill `cloudflare-workers-builds-keyless-deploy`）への移行は PROGRESS.md の未決事項
+- Workers Builds（キーレス、skill `cloudflare-workers-builds-keyless-deploy` 0.3.0）へ移行する — 接続の儀式は人手（`docs/plans/host-setup.md`）。それまでは GH Actions `deploy.yml`（`CLOUDFLARE_API_TOKEN` secret）で `main` push → D1 migrations → deploy。CI（`.github/workflows/ci.yml`、secrets なし、job `ci`）は deploy と独立で、PR と `main` push で typecheck / build と status hub の上限検査を走らせる
 
-## 命名の経緯
+## 命名
 
-候補から「Mata Tabetai」を選んだ理由：
-
-- 「また食べたい」は美味しかった食事に対して家族が実際に口にする自然な日本語で、**アプリの目的（振り返り→次へ）を 1 フレーズで内包する**
-- 「お気に入り」機能は UI 上「またたべたい」と呼ぶ予定。データモデルの favorite カラムよりこの呼称が UX 上の主役
-
-却下した類似名と理由：
-
-- **Tabeta** — 食品ロスアプリ「TABETE」と 1 文字違いで一般公開時の混同リスク大、「TABETA?」アプリが既存
-- **Tabelog** — 食べログがある
+「Mata Tabetai（またたべたい）」— 由来と却下した候補は [docs/naming.md](./docs/naming.md)。「お気に入り」は UI 上「またたべたい」と呼ぶ。
 
 ## 開発ワークフロー
 
@@ -81,7 +79,7 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 
 ### ブランチ戦略
 
-`main` への直接 commit/push は hook（`.claude/hooks/block-main-commit.sh`）と `.claude/settings.json` の deny で禁止。すべての変更は PR 経由で squash merge する。**リポジトリが private の間、GitHub 側の ruleset は効かない（Free プラン）** — main を守っているのは hook と deny だけなので、public 化（PROGRESS.md）までは特に慎重に。
+`main` への直接 commit/push は hook（`.claude/hooks/block-main-commit.sh`）と `.claude/settings.json` の deny で禁止。すべての変更は PR 経由で squash merge する。**リポジトリが private の間、GitHub 側の ruleset は効かない（Free プラン）** — main を守っているのは hook と deny だけなので、public 化（`docs/roadmap.md` 決めること 3）までは特に慎重に。
 
 **サンドボックス内エージェント**（コンテナ内 claude）の作業フロー:
 
@@ -90,7 +88,7 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 3. **push と PR**: `git push -u origin claude/<branch>` → `gh pr create --fill`（計画・確認内容を本文に）→ **PR の URL を報告する**
 4. **CI 確認**: `gh pr checks --watch`。red なら直して commit を積む
 5. **merge はしない**: 人間がホストでレビューして squash merge する（`gh pr merge` / `gh api` は deny）。migration（`drizzle/` の変更）を含む PR は merge が本番 D1 への適用まで直結するので、PR 本文に backup 手順を書く（skill `cloudflare-d1-drizzle-migration`）
-6. **PROGRESS 更新**: 大きな節目で [PROGRESS.md](./PROGRESS.md) を併せて更新する。PR の一部に含めて良い
+6. **進捗の書き戻し**: セッションの区切りでユーザが `/handoff` を打つ（`docs/status.md` を書き換え → `docs/log.md` → 上限検査 → commit）。PR の途中で `docs/status.md` を触るなら上限（40 行 / 3 KB、見出し 4 つ）を守る — CI が検査する
 7. **token の扱い**: `GH_TOKEN` はこのプロジェクトの repo-scoped token。表示しない、`gh auth login` しない、URL に埋めない。起動ログに `NOTE: GH_TOKEN absent` が出ていたら push できない（`./up.sh` で起動し直すのは人間）
 
 **ホストでの作業**（人間）: `git switch -c <type>/<short-description>` → 実装 → PR → squash merge → `git fetch --prune`（merge 後のリモートブランチは `delete_branch_on_merge` で消える）。
@@ -106,22 +104,17 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 
 ### Agent skills
 
-- **okayus-skills**（`../okayus-skills`）は `docker-compose.override.yml` で `~/.claude/skills` に **読み書き可**でマウントされる（ホストのセッションは user scope の copy を見る — 古い可能性があるので `gh skill update` を挟む）。**このリポジトリに okayus-skills を vendoring しない**（2026-05 の project-scope copy は古くなったので削除済み）
+- **okayus-skills**（`../okayus-skills`。この status hub の出典 `agent-status-hub`、sandbox / token / docs / Cloudflare 各 skill）は `docker-compose.override.yml` で `~/.claude/skills` に **読み書き可**でマウントされる（ホストのセッションは user scope の copy を見る — 古い可能性があるので `gh skill update` を挟む）。**このリポジトリに okayus-skills を vendoring しない**（2026-05 の project-scope copy は古くなったので削除済み）
 - このプロジェクトは `cloudflare-workers-passkey-auth` / `cloudflare-workers-space-membership-invite` / `cloudflare-r2-private-image-upload` の**最初の利用者**で、各 SKILL.md の `## Unverified claims — confirm while implementing, then write back` 節が還元チェックリスト
   - **還元のルール**: 実装中に `UNVERIFIED:` 項目を確認・訂正したら、**その場で** `~/.claude/skills/<skill>/SKILL.md`（= ホストの okayus-skills）を直し、`(verified YYYY-MM-DD in matatabetai)` を添えて `metadata.version` を上げる。commit / PR はホスト側で `cd ../okayus-skills` して行う（`feat(<skill>): … を還元`）。このリポジトリの PR とは別
-  - 新しい罠を踏んだら同じ skill の pitfalls に追記する。skill に無い新しい話題（例: OGP 取得）は新 skill 候補として PROGRESS.md に書く
+  - 新しい罠を踏んだら同じ skill の pitfalls に追記する。skill に無い新しい話題（例: OGP 取得）は新 skill 候補として `docs/roadmap.md` に書く
 - **third-party skill** は `.claude/skills/` に実体を vendoring する（symlink にしない）。コンテナ内で `npx skills add <owner>/<repo>@<skill> -a claude-code -y`。`skills-lock.json` を commit、更新は単独 PR
 - **公式ドキュメントの調べ方（3 層。事前学習の記憶で API を断定しない）**: ① `context7` MCP（`resolve-library-id` → `query-docs`。MDN / Hono / Drizzle / React / Vite / Cloudflare Workers を横断）— Cloudflare は `cloudflare-docs` MCP を最優先 ② `llms.txt` の直読み（WebFetch: `hono.dev/llms.txt` `orm.drizzle.team/llms.txt` `react.dev/llms.txt` `vite.dev/llms.txt` `vitest.dev/llms.txt` `zod.dev/llms.txt` `developers.cloudflare.com/llms.txt`。目次 → 必要ページ。`llms-full.txt` は巨大なので最後） ③ WebSearch → WebFetch（WebSearch は Anthropic 側で実行され egress 不要。URL が firewall の allowlist 外なら取得できないので ① に戻る）
 - **HTML / CSS / UI を書く前に `modern-web-guidance` を読む**（project scope `.claude/skills/modern-web-guidance/` に同梱。`search` / `retrieve` は `npx -y modern-web-guidance@latest …` を実行する）
 
-### 次の実装セッションの段取り
+### 段取り
 
-1. **ツールチェーン更新 + CI**（chore PR）: wrangler 3 → 4、`@cloudflare/vite-plugin` 0.1 → 1.x、pnpm 9 → 10、node 22 → 24、`@cloudflare/workers-types` → `wrangler types`（skill `cloudflare-workers-deploy-skeleton` の現行基準）。`.github/workflows/ci.yml`（job 名 `ci`: `pnpm check` + unit test）を追加 — **workflow ファイルは token で push できないので、この部分は人間がホストから push する**
-2. `cloudflare-workers-passkey-auth` + `cloudflare-workers-space-membership-invite` — 認証・スペース・招待
-3. ドメイン: meals / tags / meal_tags / またたべたい（[docs/requirements.md](./docs/requirements.md) の設計メモ）
-4. `cloudflare-r2-private-image-upload` — 写真（要: ホストで `wrangler r2 bucket create matatabetai-photos`、deploy token に `Workers R2 Storage: Edit`）
-5. `cloudflare-workers-e2e-playwright` + `playwright-e2e-in-docker-sandbox` — 3 spec
-6. 公開前: `cloudflare-workers-bot-scan-defense`、`cloudflare-d1-weekly-backup-via-pr`
+段取りとフェーズは [docs/roadmap.md](./docs/roadmap.md)、いまの 3 手は `docs/status.md`（自動注入）、人手で済ませる準備は `docs/plans/host-setup.md`。`.github/workflows/**` の変更は人間がホストから push する（token に `workflows` 権限なし）。
 
 ## コーディング思想
 
@@ -157,14 +150,9 @@ function createMealRecord(input: unknown): Result<MealRecord, ValidationError> {
 // 副作用は境界（リポジトリ / ハンドラ）に閉じ込める
 ```
 
-### ドメインの設計メモ（要件から決まっていること）
+### ドメインの設計メモ
 
-- **集計は料理名**（`meals.name`）で `GROUP BY`。同じ料理でも冷蔵庫の中身で食材が変わるため、食材ではなく名前が集計単位。保存時に NFKC 正規化 + trim した `name_normalized` を持ち、表記ゆれを減らす
-- **食材はタグ**（`tags` / `meal_tags` の多対多、スペース単位で一意）。タグ検索は `?tags=a&tags=b` の AND
-- **サジェスト**: 投稿画面で直近の料理名を `DISTINCT` で出し、タグで絞り込める。選ぶと前回の URL / レシピ / タグを複製して編集できる
-- **URL** は 1 本（レシピ／外食の店／購入した商品）、**自作レシピ**は本文 — `RecipeSource` の Discriminated Union
-- **またたべたい** は投稿に対するトグル（favorite）。UI 上の主役なので一覧・集計で前に出す
-- **日本語の部分一致検索**は当面 `LIKE '%…%'`（家族規模）。D1 の FTS5 は使えるが日本語には trigram tokenizer が要り、D1 での可否は要確認
+集計単位・タグ・サジェスト・URL / レシピ・またたべたい・日本語検索の決まりは [docs/requirements.md](./docs/requirements.md) 「実装への設計メモ」。
 
 ### やらないこと
 
@@ -215,5 +203,5 @@ pnpm dev -- --host 0.0.0.0   # 開発サーバー → ホストから http://loc
 pnpm build                   # プロダクションビルド
 pnpm check                   # type check（ツールチェーン更新後は format / lint も）
 pnpm db:migrate              # D1 migration をローカルに適用
-pnpm db:migrate:prod         # 本番 D1 に適用（ホスト・要 wrangler login。通常は deploy.yml が行う）
+pnpm db:migrate:prod         # 本番 D1 に適用（ホスト・要 wrangler login。通常は deploy パイプラインが行う）
 ```

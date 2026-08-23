@@ -18,6 +18,7 @@ docker compose exec dev zsh     # コンテナに入る (workspace = リポジ�
 - コンテナ内の claude は `bypassPermissions` が既定（起動 command が container-scope の settings に書く）。その下でも `.claude/settings.json` の **deny**（force push・`main` への push・`--delete`・`gh pr merge`・`gh auth`・`gh api`）は効く。allow は bypass では無効（ホスト側セッション向け）
 - 新しい外部ドメインに繋ぐ必要が出たら `.docker/init-firewall.sh` の allowlist に追記 → `docker compose down && docker compose build && ./up.sh`。FATAL list は解決できないと起動が止まるので最小限に。docs サイトは OPTIONAL list へ
 - `docker compose` は**プロジェクト直下で `-f` なしで実行**する。`-f` を付けると `docker-compose.override.yml`（okayus-skills のマウント）が黙って外れる
+- セッション開始時に `.claude/hooks/session-start.sh` が `docs/status.md` と `docs/log.md` の先頭を注入する（コンテナでも同じ — リポ内のファイルなので再ビルド不要）。auto memory と session はホストとコンテナで別々なので、両方が知るべきことはリポ（status hub / ADR）に書く
 
 ## 公式ドキュメントへのアクセス（3 層）
 
