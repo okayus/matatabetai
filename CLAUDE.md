@@ -71,7 +71,7 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 
 ### 開発環境の前提（ADR-001）
 
-開発は **egress 制限つき Docker サンドボックス内**で行う（[docs/local-dev.md](./docs/local-dev.md)、skill `claude-code-docker-sandbox`）。起動は **`./up.sh`**（= `op run --env-file=.docker/sandbox.env -- docker compose up -d`）。コンテナが持つ credential は **matatabetai 1 リポ限定の GitHub fine-grained PAT**（Contents + Pull requests、Workflows なし、90 日）だけで、env にのみ存在しディスクには書かない（skill `sandboxed-agent-github-token-via-1password`、ADR-001 改訂）。Cloudflare のトークンは持たず `wrangler login` もしない。merge は人間がホストで行う。
+開発は **egress 制限つき Docker サンドボックス内**で行う（[docs/local-dev.md](./docs/local-dev.md)、skill `claude-code-docker-sandbox`）。起動は **`./up.sh`**（= 素の `docker compose up -d`。資格情報ゼロ・冪等）、**token 付きシェルは `./shell.sh`**（= `op run --env-file=.docker/sandbox.env -- docker exec -it -e GH_TOKEN matatabetai-dev …`）。credential は **matatabetai 1 リポ限定の GitHub fine-grained PAT**（Contents + Pull requests、Workflows なし、90 日）だけで、`./shell.sh` が開いたシェルの env にのみ存在し、ディスクにもコンテナ設定にも書かない（skill `sandboxed-agent-github-token-via-1password` 0.2.0、ADR-001 改訂 2026-08-23）。Cloudflare のトークンは持たず `wrangler login` もしない。merge は人間がホストで行う。
 
 - ホストで `pnpm` / `npx` / `wrangler` などを直接叩かない（`.claude/hooks/require-container.py` が止める）。`docker compose exec dev <cmd>` 経由で実行する
 - PR / CI の状態は **`gh pr view` / `gh pr checks`**（fine-grained PAT は Checks REST API を呼べないので `gh api …/check-runs` は使わない。`gh api` は deny）
@@ -89,7 +89,7 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 4. **CI 確認**: `gh pr checks --watch`。red なら直して commit を積む
 5. **merge はしない**: 人間がホストでレビューして squash merge する（`gh pr merge` / `gh api` は deny）。migration（`drizzle/` の変更）を含む PR は merge が本番 D1 への適用まで直結するので、PR 本文に backup 手順を書く（skill `cloudflare-d1-drizzle-migration`）
 6. **進捗の書き戻し**: セッションの区切りでユーザが `/handoff` を打つ（`docs/status.md` を書き換え → `docs/log.md` → 上限検査 → commit）。PR の途中で `docs/status.md` を触るなら上限（40 行 / 3 KB、見出し 4 つ）を守る — CI が検査する
-7. **token の扱い**: `GH_TOKEN` はこのプロジェクトの repo-scoped token。表示しない、`gh auth login` しない、URL に埋めない。起動ログに `NOTE: GH_TOKEN absent` が出ていたら push できない（`./up.sh` で起動し直すのは人間）
+7. **token の扱い**: `GH_TOKEN` はこのプロジェクトの repo-scoped token。表示しない、`gh auth login` しない、URL に埋めない。`git push` が `401` を返したら `./shell.sh` 以外で開いたシェルにいる＝ token 無し。**回避しようとせず人間に `./shell.sh` を開いてもらう**（`op` のセッションはエージェントには無い）。PR 本文の修正は `gh pr comment` で（`gh pr edit` は image の古い `gh` が Projects classic の GraphQL エラーで落ちる）。**コンテナ内から `docker compose up` は打たない**
 
 **ホストでの作業**（人間）: `git switch -c <type>/<short-description>` → 実装 → PR → squash merge → `git fetch --prune`（merge 後のリモートブランチは `delete_branch_on_merge` で消える）。
 

@@ -14,13 +14,13 @@
 
 1. GitHub → Settings → Developer settings → Fine-grained tokens: Resource owner = 自分、Repository access = **`okayus/matatabetai` のみ**、Contents: Read and write、Pull requests: Read and write（任意で Actions: Read）、**Workflows なし**、期限 90 日
 2. 画面から直接 1Password へ: `op item create --category "API Credential" --vault "Private" --title "github-pat-matatabetai-sandbox" 'credential=<token>' 'hostname=github.com' 'expires=<YYYY-MM-DD>'`。先に `op item list --vault Private | grep github-pat-` で同名の item が無いことを確認
-3. `eval $(op signin)` → `docker compose down && ./up.sh` → `docker compose logs dev | grep NOTE`（`GH_TOKEN absent` が**出ない**こと）
-4. E2E（コンテナ内 `docker compose exec dev zsh`）: `git switch -c claude/e2e-token && git commit --allow-empty -m "chore: e2e token push" && git push -u origin claude/e2e-token && gh pr create --fill && gh pr checks`。否定テスト: PR の無い別ブランチの commit を `git push origin HEAD:main` → public + ruleset なら `GH013` で拒否（private なら通ってしまうので実施しない）。`.github/workflows/ci.yml` への変更 push → `without \`workflow\` scope` で拒否されることも確認
+3. `./up.sh` → `docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' matatabetai-dev | grep -c '^GH_TOKEN'` が **`0`**（コンテナ設定に token が無いこと）。もう一度 `./up.sh` を打って `Running` かつ container id が変わらないこと（冪等）
+4. E2E（`eval $(op signin)` → **`./shell.sh`** で入る。中で `echo ${#GH_TOKEN}` が `93`）: `git switch -c claude/e2e-token && git commit --allow-empty -m "chore: e2e token push" && git push -u origin claude/e2e-token && gh pr create --fill && gh pr checks`。否定テスト: PR の無い別ブランチの commit を `git push origin HEAD:main` → public + ruleset なら `GH013` で拒否。`.github/workflows/ci.yml` への変更 push → `without \`workflow\` scope` で拒否されることも確認。fail closed の確認は `docker exec -it matatabetai-dev zsh`（wrapper 無し）で入って `git push` が `401` になること
 5. ホストで E2E の PR を merge（`delete_branch_on_merge` で remote branch は消える）、コンテナ内 `git fetch --prune`
 
 ## 3. コンテナ内 claude の初回認証と MCP の承認
 
-`docker compose exec dev claude` → OAuth URL をホストブラウザで開いてコードを貼る → project MCP（`cloudflare-docs` / `context7`）の trust を承認 → `claude mcp list` が `✔ Connected`。最初のメッセージに `docs/status.md` が注入されていることを確認（SessionStart hook。skill `agent-status-hub` の UNVERIFIED「コンテナ内で hook が発火する」の確認になる → 結果を skill に書き戻す）
+`./shell.sh claude` → OAuth URL をホストブラウザで開いてコードを貼る → project MCP（`cloudflare-docs` / `context7`）の trust を承認 → `claude mcp list` が `✔ Connected`。最初のメッセージに `docs/status.md` が注入されていることを確認（SessionStart hook。skill `agent-status-hub` の UNVERIFIED「コンテナ内で hook が発火する」の確認になる → 結果を skill に書き戻す）
 
 ## 4. Workers Builds 接続（skill `cloudflare-workers-builds-keyless-deploy` 0.3.0、`references/dashboard-walkthrough.md`）
 

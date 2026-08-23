@@ -15,8 +15,8 @@ Cloudflare Workers + D1 + R2 でホスティング（単一 Worker で SPA と A
 `pnpm install`・ビルド・テスト・Claude Code は egress 制限つきコンテナ内で実行する。ホストで `pnpm install` しない。
 
 ```bash
-./up.sh                       # = op run … docker compose up -d（GitHub token を 1Password から注入）。初回は build に数分
-docker compose exec dev zsh   # コンテナへ（workspace = リポジトリ root）
+./up.sh                       # = docker compose up -d（資格情報なし・冪等）。初回は build に数分
+./shell.sh                    # コンテナへ（GitHub token 付き。workspace = リポジトリ root）
 pnpm install && pnpm dev -- --host 0.0.0.0   # → ホストのブラウザで http://localhost:5573/
 ```
 

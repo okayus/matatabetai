@@ -10,7 +10,7 @@
 
 ## 次の 3 手
 
-1. **人手の準備**（[plans/host-setup.md](plans/host-setup.md)）: PAT → 1Password → `./up.sh`、コンテナ内 claude ログイン、可視性 + ruleset、Workers Builds 接続、R2 bucket。済むまでコンテナは push できない
+1. **人手の準備**（[plans/host-setup.md](plans/host-setup.md)）: PAT → 1Password → `./shell.sh`（2026-08-23 改訂: 注入は exec 時）、コンテナ内 claude ログイン、可視性 + ruleset、Workers Builds 接続、R2 bucket。済むまでコンテナは push できない
 2. **ツールチェーン更新**（コンテナ内、`claude/chore-toolchain`）: wrangler 4 / `@cloudflare/vite-plugin` 1.x / pnpm 10 / node 24 / `wrangler types`。`ci.yml` は配備済み — PR で `ci` が緑になることを確認
 3. **認証・スペース・招待**（skill `cloudflare-workers-passkey-auth` + `cloudflare-workers-space-membership-invite`）: 最初の migration から `spaces` / `space_members` / `invites`、`space_id NOT NULL`。UNVERIFIED を確認したらその場で skill を直す
 
