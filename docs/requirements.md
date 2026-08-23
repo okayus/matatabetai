@@ -59,3 +59,12 @@ meal_tags    (meal_id, tag_id)                       PK(meal_id, tag_id)
 - レシピ URL の OGP（タイトル・画像）表示 — `HTMLRewriter` で取得する案。hotlink はしない
 - 期間集計の UI（週 / 月）、タグクラウド
 - スペース切替 UI（内部モデルは複数スペース対応、UI は当面 1 スペース）
+
+## 実装への設計メモ（CLAUDE.md から移設、2026-08-23）
+
+- **集計は料理名**（`meals.name`）で `GROUP BY`。同じ料理でも冷蔵庫の中身で食材が変わるため、食材ではなく名前が集計単位。保存時に NFKC 正規化 + trim した `name_normalized` を持ち、表記ゆれを減らす
+- **食材はタグ**（`tags` / `meal_tags` の多対多、スペース単位で一意）。タグ検索は `?tags=a&tags=b` の AND
+- **サジェスト**: 投稿画面で直近の料理名を `DISTINCT` で出し、タグで絞り込める。選ぶと前回の URL / レシピ / タグを複製して編集できる
+- **URL** は 1 本（レシピ／外食の店／購入した商品）、**自作レシピ**は本文 — `RecipeSource` の Discriminated Union
+- **またたべたい** は投稿に対するトグル（favorite）。UI 上の主役なので一覧・集計で前に出す
+- **日本語の部分一致検索**は当面 `LIKE '%…%'`（家族規模）。D1 の FTS5 は使えるが日本語には trigram tokenizer が要り、D1 での可否は要確認

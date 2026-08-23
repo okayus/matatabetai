@@ -4,7 +4,7 @@
 
 Cloudflare Workers + D1 + R2 でホスティング（単一 Worker で SPA と API を配信）。本番: https://matatabetai.shiraoka.workers.dev
 
-- 進捗と次の一手: [PROGRESS.md](PROGRESS.md)
+- いま: [docs/status.md](docs/status.md)（SessionStart hook が注入）／ 履歴: [docs/log.md](docs/log.md) ／ 段取り: [docs/roadmap.md](docs/roadmap.md)
 - 要件: [docs/requirements.md](docs/requirements.md)
 - 決定記録: [docs/adr/](docs/adr/)
 - ローカル開発（サンドボックス）: [docs/local-dev.md](docs/local-dev.md)

@@ -1,0 +1,34 @@
+# typecheck/build only — no secrets. Deploys: today GH Actions deploy.yml (to be replaced by
+# Workers Builds, see docs/plans/host-setup.md). The main ruleset (once the repo is public)
+# requires this workflow's job id `ci` as a status check — keep the name.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Status hub size check (docs/status.md ≤ 40 lines / 3 KB, fixed headings)
+        run: bash .claude/hooks/check-status.sh docs/status.md
+      - uses: pnpm/action-setup@v6 # no `version:` — it reads packageManager from package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22 # bump to 24 with the toolchain PR (sandbox image is node:24)
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm -r run check
+      - name: Build
+        run: pnpm -r run build
+      # add `pnpm -r run test` once vitest exists
