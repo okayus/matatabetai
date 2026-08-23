@@ -201,7 +201,8 @@ function createMealRecord(input: unknown): Result<MealRecord, ValidationError> {
 # すべてコンテナ内（docker compose exec dev zsh）で実行する
 pnpm dev -- --host 0.0.0.0   # 開発サーバー → ホストから http://localhost:5573/
 pnpm build                   # プロダクションビルド
-pnpm check                   # type check（ツールチェーン更新後は format / lint も）
+pnpm check                   # pnpm types + type check（format / lint は未導入）
+pnpm types                   # wrangler.jsonc から worker-configuration.d.ts を生成（gitignore。clone 直後に 1 回）
 pnpm db:migrate              # D1 migration をローカルに適用
 pnpm db:migrate:prod         # 本番 D1 に適用（ホスト・要 wrangler login。通常は deploy パイプラインが行う）
 ```

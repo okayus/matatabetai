@@ -8,7 +8,8 @@
 
 ## Phase 1 — 認証と境界
 
-- [ ] ツールチェーン更新（wrangler 4 / `@cloudflare/vite-plugin` 1.x / pnpm 10 / node 24 / `wrangler types`）。`ci.yml` の node も 24 へ
+- [x] ツールチェーン更新（wrangler 4 / `@cloudflare/vite-plugin` 1.x / pnpm 11 / vite 8 / TypeScript 7 / `wrangler types`）
+- [ ] `ci.yml` の node を 22 → 24 へ（ホストから人手。token に `workflows` 権限が無い）
 - [ ] Workers Builds へ移行し `deploy.yml` と GitHub secrets を撤去（儀式は人手、plans/host-setup.md）
 - [ ] passkey 認証（招待制、`INITIAL_REGISTRATION_TOKEN` → `wrangler secret put`）— skill `cloudflare-workers-passkey-auth`
 - [ ] スペース・メンバー・招待リンク — skill `cloudflare-workers-space-membership-invite`（最初の migration から、`space_id NOT NULL`）
