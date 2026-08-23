@@ -71,7 +71,7 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 
 ### 開発環境の前提（ADR-001）
 
-開発は **egress 制限つき Docker サンドボックス内**で行う（[docs/local-dev.md](./docs/local-dev.md)、skill `claude-code-docker-sandbox`）。起動は **`./up.sh`**（= 素の `docker compose up -d`。資格情報ゼロ・冪等）、**token 付きシェルは `./shell.sh`**（= `op run --env-file=.docker/sandbox.env -- docker exec -it -e GH_TOKEN matatabetai-dev …`）。credential は **matatabetai 1 リポ限定の GitHub fine-grained PAT**（Contents + Pull requests、Workflows なし、90 日）だけで、`./shell.sh` が開いたシェルの env にのみ存在し、ディスクにもコンテナ設定にも書かない（skill `sandboxed-agent-github-token-via-1password` 0.2.0、ADR-001 改訂 2026-08-23）。Cloudflare のトークンは持たず `wrangler login` もしない。merge は人間がホストで行う。
+開発は **egress 制限つき Docker サンドボックス内**で行う（[docs/local-dev.md](./docs/local-dev.md)、skill `claude-code-docker-sandbox`）。起動は **`./up.sh`**（= 素の `docker compose up -d`。資格情報ゼロ・冪等）、**token 付きシェルは `./shell.sh`**（= `op read で op:// 参照を解決 → docker exec -e GH_TOKEN matatabetai-dev …`）。credential は **matatabetai 1 リポ限定の GitHub fine-grained PAT**（Contents + Pull requests、Workflows なし、90 日）だけで、`./shell.sh` が開いたシェルの env にのみ存在し、ディスクにもコンテナ設定にも書かない（skill `sandboxed-agent-github-token-via-1password` 0.2.0、ADR-001 改訂 2026-08-23）。Cloudflare のトークンは持たず `wrangler login` もしない。merge は人間がホストで行う。
 
 - ホストで `pnpm` / `npx` / `wrangler` などを直接叩かない（`.claude/hooks/require-container.py` が止める）。`docker compose exec dev <cmd>` 経由で実行する
 - PR / CI の状態は **`gh pr view` / `gh pr checks`**（fine-grained PAT は Checks REST API を呼べないので `gh api …/check-runs` は使わない。`gh api` は deny）
