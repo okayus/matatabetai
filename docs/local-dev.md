@@ -5,14 +5,17 @@
 `pnpm install`・ビルド・テスト・Claude Code は **egress 制限つきコンテナ内**で実行する。ホストで `pnpm install` しない（サプライチェーン対策。構成は okayus-skills `claude-code-docker-sandbox` skill のまま）。
 
 ```bash
-eval $(op signin)               # 1Password CLI のセッション（desktop app 統合があれば不要。30 分で切れる）
-./up.sh                         # = op run --env-file=.docker/sandbox.env -- docker compose up -d。初回は build に数分
-docker compose logs dev | grep -i 'firewall\|WARN\|NOTE'   # "Firewall verification passed" が 2 行。NOTE: GH_TOKEN absent が出たら token 未注入
-docker compose exec dev zsh     # コンテナに入る (workspace = リポジトリ root)
+./up.sh                         # = docker compose up -d（資格情報なし・冪等・何度打っても安全）。初回は build に数分
+docker compose logs dev | grep -i 'firewall\|WARN\|NOTE'   # "Firewall verification passed" が 2 行
+eval $(op signin)               # 1Password CLI のセッション（desktop app 統合があれば不要。30 分で切れる。↓ の shell.sh 用）
+./shell.sh                      # token 付きでコンテナに入る (workspace = リポジトリ root)
+docker exec -it matatabetai-dev zsh   # token 無しで入りたいとき
 ```
 
 - ホスト側は**エディタと git だけ**（bind mount なので編集は即時反映）。コンテナに Cloudflare の credential は入れない（`wrangler login` もしない）
-- コンテナが持つ credential は **matatabetai 1 リポ限定の GitHub fine-grained PAT** だけ（Contents + Pull requests、Workflows なし、90 日）。`./up.sh` が 1Password から解決して env にだけ注入し、git の credential helper は env を echo する inline 関数、`gh` は `GH_TOKEN` を直接読む。**`docker compose up -d` を直接叩くと token なしで起動する**（commit はできるが push できない = fail closed）。`docker compose restart` は env を保つが `down` 後は `./up.sh` が要る。skill `sandboxed-agent-github-token-via-1password`
+- credential は **matatabetai 1 リポ限定の GitHub fine-grained PAT** だけ（Contents + Pull requests、Workflows なし、90 日）。**`./shell.sh` が 1Password から解決して、そのシェル（と子プロセス = claude / git / gh）の env にだけ注入する**。git の credential helper は env を echo する inline 関数、`gh` は `GH_TOKEN` を直接読む。**`docker exec` で直に入ったシェルには token が無い**（commit はできるが push できない = fail closed）。コンテナ設定にも PID 1 にも載らないので `./up.sh` は何度打っても安全。skill `sandboxed-agent-github-token-via-1password` 0.2.0
+- ⚠️ **2026-08-23 改訂（ADR-001）**: 以前は token を compose の `environment:` に入れて `./up.sh` で注入していた。それだと token が**コンテナ設定の一部**になり、op を通さない `docker compose up -d` が「設定変更」と判定されて[コンテナごと作り直される](https://docs.docker.com/reference/cli/docker/compose/up/)＝ token 消失 + 中の Claude セッションも死ぬ（kokemusu で実測）。注入を exec 時に移して切り離した
+- **確認**: `./shell.sh` の中で `test -n "$GH_TOKEN" && echo "len=${#GH_TOKEN}"`（93 文字。値は印字しない）。コンテナ設定に無いことは `docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' matatabetai-dev | grep -c '^GH_TOKEN'` → `0`。⚠️ ホストで `op run -- env` を見ると値は `<concealed by 1Password>`（ちょうど 24 文字）にマスクされるので「24 文字 = 壊れている」ではない
 - dev サーバーはコンテナ内で `pnpm dev -- --host 0.0.0.0` → ホストのブラウザから **http://localhost:5573/**（5173 = 汎用 Vite、5273 = kokemusu、5373 = mazuoboeru、5473 = nyalog と衝突しないため）
 - コンテナ内 `claude` の初回認証は OAuth URL をホストブラウザで開いてコードを貼る。auth は named volume `matatabetai_claude-config` に永続化され `docker compose down` でも消えない。project MCP（`cloudflare-docs` / `context7`）は初回に対話セッションで trust 承認が要る（`claude mcp list` が `⏸ Pending approval` → 承認後 `✔ Connected`）
 - コンテナ内の claude は `bypassPermissions` が既定（起動 command が container-scope の settings に書く）。その下でも `.claude/settings.json` の **deny**（force push・`main` への push・`--delete`・`gh pr merge`・`gh auth`・`gh api`）は効く。allow は bypass では無効（ホスト側セッション向け）
@@ -42,14 +45,15 @@ chromium は image に焼き込み済み（`PLAYWRIGHT_VERSION` build arg = `1.6
 
 - **発行**: GitHub → Settings → Developer settings → Fine-grained tokens。Resource owner = 自分、Repository access = `okayus/matatabetai` のみ、Contents: Read and write、Pull requests: Read and write（任意で Actions: Read）、**Workflows は付けない**、期限 90 日
 - **保管**: GitHub の画面から直接 1Password へ。`op item create --category "API Credential" --vault "Private" --title "github-pat-matatabetai-sandbox" 'credential=<token>' 'expires=<YYYY-MM-DD>'`。item 名は **1 リポ 1 タイトル**（他プロジェクトの item 名をコピペしない — `op item list --vault Private | grep github-pat-` で確認）
-- **ローテーション**: 90 日ごと、または疑いがあれば即時。GitHub で Regenerate → `op item edit … 'credential=<new>' 'expires=<date>'` → `./up.sh`
+- **ローテーション**: 90 日ごと、または疑いがあれば即時。GitHub で Regenerate → `op item edit … 'credential=<new>' 'expires=<date>'` → **新しい `./shell.sh` を開くだけ**（コンテナは無関係）
 - **期限切れの症状**: コンテナ内の `git push` が `remote: Invalid username or token`。`op item get github-pat-matatabetai-sandbox --fields label=expires` を先に見る
 - **やらないこと**: `gh auth login`（token をディスクに書く）、`git config credential.helper store`、`echo $GH_TOKEN`、token 入りの remote URL
 
 ## トラブルシューティング
 
 - **起動ログで `Failed to resolve <domain>`** → FATAL allowlist のドメインが解決できない。一時的な DNS なら `docker compose restart`、恒久なら allowlist を見直す
-- **`NOTE: GH_TOKEN absent`** → `./up.sh` を通していない。`docker compose down` → `eval $(op signin)` → `./up.sh`
+- **コンテナ内で `git push` が `401` / `gh` が未ログイン** → `./shell.sh` 以外で開いたシェルにいる。`eval $(op signin)`（desktop app 統合があれば不要）→ `./shell.sh`。コンテナの作り直しは不要
+- **`docker inspect` の `Config.Env` に `=` の無い裸の `GH_TOKEN` がある** → 旧方式の残骸。`grep -c '^GH_TOKEN=.'`（`=` の後に 1 文字以上）で確認する。`cut -d= -f1 | grep -c` は裸のキーを「注入済み」と誤答する
 - **ホストで `pnpm` を叩いて hook に止められた** → `docker compose exec dev pnpm …` に書き換える（`.claude/hooks/require-container.py`）
 - **`claude` の `/model` に Fable 系が出ない** → `DISABLE_TELEMETRY` を compose env に足していないか確認（Statsig を塞ぐと flag-gated model が隠れる）
 - **Context7 が応答しない** → `mcp.context7.com` は AWS ELB で IP が変わる。firewall は起動時に解決するので `docker compose restart`

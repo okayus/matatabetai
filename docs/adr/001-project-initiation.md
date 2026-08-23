@@ -54,9 +54,21 @@ nyalog は「家族 = 暗黙の 1 テナント」から per-space へ後付け�
 
 §5 の「ホストの systemd リレー（GitHub App）が `claude/*` を代行する」を撤回し、okayus-skills `sandboxed-agent-github-token-via-1password`（mazuoboeru・kokemusu で 2026-08-22 に E2E 済み）を採用する。
 
-- **仕組み**: `./up.sh` = `op run --env-file=.docker/sandbox.env -- docker compose up -d`。matatabetai 1 リポだけに届く GitHub fine-grained PAT（Contents + Pull requests、Workflows なし、90 日）を 1Password から解決してコンテナの env にだけ注入する。git の credential helper は env を echo する inline 関数、`gh` は `GH_TOKEN` を直接読む。ディスクには何も残らず、`op run` を通さない起動は token なし（fail closed）
+- **仕組み**（→ **2026-08-23 改訂で注入点を変更**、下記。以下は当時の記録）: `./up.sh` = `op run --env-file=.docker/sandbox.env -- docker compose up -d`。matatabetai 1 リポだけに届く GitHub fine-grained PAT（Contents + Pull requests、Workflows なし、90 日）を 1Password から解決してコンテナの env にだけ注入する。git の credential helper は env を echo する inline 関数、`gh` は `GH_TOKEN` を直接読む。ディスクには何も残らず、`op run` を通さない起動は token なし（fail closed）
 - **理由**: relay は credential を境界の外に置ける代わりに、プロジェクトごとの GitHub App・秘密鍵・systemd timer・`Relay-Merge` トレーラーという可動部を持つ。家族用の solo プロジェクトではこの重さが見合わない。agent が `gh pr create` / `gh pr checks` を直接使えるのも利点
 - **失うもの**: compromised sandbox が「CI green の PR を merge できる」「非保護ブランチへ push できる」残余リスク。許容できなくなったら relay に戻す（skill の migration 手順）
 - **このリポ固有の注意**: **private リポは Free プランでは ruleset / branch protection が効かない**。token 経路の本来の境界（ruleset + token scope）のうち ruleset 側が無く、main を守るのは hook と Claude Code の deny（force push / `main` / `gh pr merge` / `gh api`）だけになる。public 化（nyalog / mazuoboeru / kokemusu と同じ）すれば `protect-main` ruleset（PR 必須 + `ci` check + bypass なし）が効く — `docs/roadmap.md` 決めること 3
 - **merge ポリシー**: 人間がホストで merge（既定）。agent に依頼させるなら `gh pr merge --auto --squash` のみ allow + repo の auto-merge を有効化
 - relay 用に置いた `~/.config/matatabetai-relay/` と systemd units は撤去済み（GitHub App は未作成だったので戻し道は不要）
+
+## 改訂（2026-08-23）: token の注入点を「コンテナ env」から「exec 時のシェル」へ
+
+方針（1 リポ限定・期限付きの credential を境界の内側に置く）は変えない。**入れ方だけを変える。** kokemusu で同じ配線を 1 日運用して出た 2 つの事実による（okayus-skills `sandboxed-agent-github-token-via-1password` 0.2.0 / v0.8.0）。本リポはまだ token E2E 前なので、踏む前に配線を直しておく。
+
+- **やめた理由 1 — `docker compose up` が破壊的になる**: token が compose の `environment:` にあると、それは**コンテナ設定の一部**。op を通さない `docker compose up -d` が 1 回来ただけで「設定変更」と判定され、compose が[コンテナを停止して作り直す](https://docs.docker.com/reference/cli/docker/compose/up/)。token は消え、中で動いていた Claude のセッションも落ちる。
+- **やめた理由 2 — 「compose は未解決の値なしキーを除去する」は誤り**: 実測（Compose v5.3.1 / Engine 29.6.2）では host 側が unset のとき `Config.Env` に **`=` を持たない裸の `GH_TOKEN`** が残る。コンテナ側は unset なので fail closed 自体は成立するが、`docker inspect … | cut -d= -f1 | grep -c` が「注入済み」と誤答する。確認は `grep -c '^GH_TOKEN=.'`（`=` の後に 1 文字以上）。
+- **新しい注入点**: `./up.sh` = 素の `docker compose up -d`（**資格情報ゼロ・冪等**）。token は **`./shell.sh`**（= `op run --env-file=.docker/sandbox.env -- docker exec -it -e GH_TOKEN matatabetai-dev …`）が開いたシェルとその子（claude / git / gh）にだけ入る。`docker exec -e NAME`（値なし）はホストプロセスの env から転送し、未設定なら何も渡さない＝ fail closed のまま。値は argv に載らないので `ps` に出ない。
+- **境界・merge 方針・token scope は無変更**。§ 「このリポ固有の注意」（private リポでは ruleset が効かない）も無変更 — 2026-08-23 に public 化済みなので `protect-main` ruleset が本来の境界として効く。
+- **副作用**: シェルを開くたびに 1Password のアンロックが要る。エージェントは自分では token 付きシェルを開けない（`op` のセッションが無い）＝意図的な人間のチェックポイント。
+- **rotation**: `op item edit` のあと **新しい `./shell.sh` を開くだけ**。`docker exec` は作成時 env を継承し reconcile しないので、旧方式では re-exec しても新 token は入らずコンテナ再作成が要った。
+- **戻し方**: `docker-compose.yml` の `environment:` に `GH_TOKEN: "${GH_TOKEN:-}"` を戻し、`up.sh` を `op run … -- docker compose up -d` に戻す。そのとき起動チェックは 3 値（`present (len=N)` / `is empty` / `is unset`）にすること。
