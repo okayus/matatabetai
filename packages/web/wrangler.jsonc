@@ -1,7 +1,10 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "matatabetai",
-  "compatibility_date": "2025-03-28",
+  // 2026-08-04 以降の compatibility_date は nodejs_compat / nodejs_compat_v2 が既定で ON
+  // （https://developers.cloudflare.com/workers/configuration/compatibility-flags/）。
+  // 日付は同梱 workerd (1.20260820.1) に合わせる。上げたら `pnpm types` を流し直す。
+  "compatibility_date": "2026-08-20",
   "main": "./worker/index.ts",
   "assets": {
     "binding": "ASSETS",

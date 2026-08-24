@@ -2,6 +2,8 @@ node_modules/
 dist/
 .wrangler/
 .vite/
+# `wrangler types` の生成物（580 KB）。pnpm types / pnpm check が毎回作り直す
+packages/web/worker-configuration.d.ts
 # サンドボックス内 pnpm の store (bind mount 上だと hardlink 先が workspace 内になる)
 .pnpm-store/
 .dev.vars

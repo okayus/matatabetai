@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import type { Bindings } from "./types";
 
-const app = new Hono<{ Bindings: Bindings }>();
+// Env は wrangler types が wrangler.jsonc から生成する global（worker-configuration.d.ts）
+const app = new Hono<{ Bindings: Env }>();
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
@@ -12,4 +12,4 @@ app.notFound(async (c) => {
 
 export default {
   fetch: app.fetch,
-} satisfies ExportedHandler<Bindings>;
+} satisfies ExportedHandler<Env>;

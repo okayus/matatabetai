@@ -1,2 +1,8 @@
 packages:
   - "packages/*"
+
+# pnpm 11 は依存の build script を明示許可制にしている（未設定だと install が exit 1）。
+# どちらもプラットフォーム別バイナリを配置するために postinstall が必要。
+allowBuilds:
+  esbuild: true
+  workerd: true
