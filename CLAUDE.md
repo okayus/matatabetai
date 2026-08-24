@@ -79,15 +79,15 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 
 ### ブランチ戦略
 
-`main` への直接 commit/push は hook（`.claude/hooks/block-main-commit.sh`）と `.claude/settings.json` の deny で禁止。すべての変更は PR 経由で squash merge する。**リポジトリが private の間、GitHub 側の ruleset は効かない（Free プラン）** — main を守っているのは hook と deny だけなので、public 化（`docs/roadmap.md` 決めること 3）までは特に慎重に。
+`main` への直接 commit/push は禁止。すべての変更は PR 経由で squash merge する。リポジトリは **public**（2026-08-23）で、main はサーバー側の `protect-main` ruleset（PR 必須 + required check `ci` + force push 禁止 + `bypass_actors: []`）が守る。hook（`.claude/hooks/block-main-commit.sh`）と `.claude/settings.json` の deny は事故を早く止める二重化で、境界は ruleset と token scope（ADR-001 改訂 2026-08-24）。
 
 **サンドボックス内エージェント**（コンテナ内 claude）の作業フロー:
 
 1. **ブランチ作成**: `git switch -c claude/<type>-<short-description>`
-2. **実装と commit**: 小さく積む。`.github/workflows/**` は変更しない（token に `workflows` 権限が無く push が拒否される。人間がホストで行う）
+2. **実装と commit**: 小さく積む。`.github/workflows/**` は変更しない（token に `workflows` 権限が無く push が拒否される。人間がホストで行う）。ただし CI の中身は yaml を触らずに変えられる — ci.yml は「安定シェル」で、実体は `package.json` の `ci` script・`.node-version`・`.claude/hooks/` にあり、これらは push できる。action の @vN 更新は Dependabot が PR を出す
 3. **push と PR**: `git push -u origin claude/<branch>` → `gh pr create --fill`（計画・確認内容を本文に）→ **PR の URL を報告する**
 4. **CI 確認**: `gh pr checks --watch`。red なら直して commit を積む
-5. **merge はしない**: 人間がホストでレビューして squash merge する（`gh pr merge` / `gh api` は deny）。migration（`drizzle/` の変更）を含む PR は merge が本番 D1 への適用まで直結するので、PR 本文に backup 手順を書く（skill `cloudflare-d1-drizzle-migration`）
+5. **merge**: CI が green なら `gh pr merge --auto --squash <PR番号>` で auto-merge を arm してよい（required check `ci` が通ったときだけ GitHub が squash merge する。`--auto` なしの即時 merge と `gh api` は使わない）。**例外 — 次に触れる PR は arm せず人間の merge を待つ**: `drizzle/`（migration。merge が本番 D1 への適用に直結するので PR 本文に backup 手順を書く — skill `cloudflare-d1-drizzle-migration`）・`.github/**`・`.claude/**`・`docs/adr/**`
 6. **進捗の書き戻し**: セッションの区切りでユーザが `/handoff` を打つ（`docs/status.md` を書き換え → `docs/log.md` → 上限検査 → commit）。PR の途中で `docs/status.md` を触るなら上限（40 行 / 3 KB、見出し 4 つ）を守る — CI が検査する
 7. **token の扱い**: `GH_TOKEN` はこのプロジェクトの repo-scoped token。表示しない、`gh auth login` しない、URL に埋めない。`git push` が `401` を返したら `./shell.sh` 以外で開いたシェルにいる＝ token 無し。**回避しようとせず人間に `./shell.sh` を開いてもらう**（`op` のセッションはエージェントには無い）。PR 本文の修正は `gh pr comment` で（`gh pr edit` は image の古い `gh` が Projects classic の GraphQL エラーで落ちる）。**コンテナ内から `docker compose up` は打たない**
 
@@ -202,6 +202,7 @@ function createMealRecord(input: unknown): Result<MealRecord, ValidationError> {
 pnpm dev -- --host 0.0.0.0   # 開発サーバー → ホストから http://localhost:5573/
 pnpm build                   # プロダクションビルド
 pnpm check                   # pnpm types + type check（format / lint は未導入）
+pnpm run ci                  # CI と同じ検査（-r で check + build。ci.yml はこれを呼ぶだけ）
 pnpm types                   # wrangler.jsonc から worker-configuration.d.ts を生成（gitignore。clone 直後に 1 回）
 pnpm db:migrate              # D1 migration をローカルに適用
 pnpm db:migrate:prod         # 本番 D1 に適用（ホスト・要 wrangler login。通常は deploy パイプラインが行う）

@@ -73,3 +73,12 @@ nyalog は「家族 = 暗黙の 1 テナント」から per-space へ後付け�
 - **rotation**: `op item edit` のあと **新しい `./shell.sh` を開くだけ**。`docker exec` は作成時 env を継承し reconcile しないので、旧方式では re-exec しても新 token は入らずコンテナ再作成が要った。
 - **`op run` で包まないこと（2026-08-23 追記）**: `shell.sh` の中身は `op read` で op:// 参照を先に解決してから `docker exec` する。`op run -- docker exec -it …` にすると、op が子プロセスの stdout / stderr に介入して秘密をマスクする仕様のため、対話シェルが実端末を失う（プロンプトが生の `${…}` テンプレートで出る、pty が 80x24 に落ちる）。kokemusu で観測。`-it` も決め打ちにせず `[ -t 0 ] && [ -t 1 ]` で判定する（非対話呼び出しは `docker exec -it` が拒否される）。okayus-skills `sandboxed-agent-github-token-via-1password` 0.2.1（v0.8.1）。
 - **戻し方**: `docker-compose.yml` の `environment:` に `GH_TOKEN: "${GH_TOKEN:-}"` を戻し、`up.sh` を `op run … -- docker compose up -d` に戻す。そのとき起動チェックは 3 値（`present (len=N)` / `is empty` / `is unset`）にすること。
+
+## 改訂（2026-08-24）: CI を「安定シェル」化し、merge を auto-merge opt-in に
+
+deploy.yml の pnpm 衝突（#12）で「workflow yaml を直せるのはホストだけ」という摩擦が顕在化し、調査で「public 化（2026-08-23、前改訂に記載）済みなのに **ruleset が未作成**」という中途半端も見つかった。push / PR 経路（前 2 改訂）は変えず、CI の変え方と merge の運用を改める。
+
+- **ruleset を実際に作る**: `protect-main`（PR 必須 + required check `ci`（GitHub Actions app に pin）+ force push 禁止 + `bypass_actors: []`）と `no-force-push-anywhere`（`~ALL`）。enforcement は public + Free で有効。これで main の保護がホストの hook から本来のサーバー側境界に移る（コマンドは plans/host-setup.md 1）
+- **PAT に Workflows 権限は足さない**: deploy.yml が secrets（`CLOUDFLARE_API_TOKEN`）を持つ間、改変した workflow は `pull_request` で**人間のレビュー前に**走り secrets に触れる。また required check `ci` の中身自体を書き換えられるようになる。代わりに ci.yml を「安定シェル」化（#13）— steps はリポ内ファイル（`package.json` の `ci` script / `.node-version` / `.claude/hooks/`）を呼ぶだけにし、CI の中身の変更はコンテナから push できるファイルで完結させる。action の @vN 更新は Dependabot。Workers Builds 移行（§1）で deploy.yml と secrets が消えれば必要性はさらに下がる
+- **merge**: `gh pr merge --auto --squash` の arm を解禁（skill `sandboxed-agent-github-token-via-1password` の opt-in 形式）。`--auto` は PR timeline に残る監査可能なシグナルで、required check `ci` が green のときだけ GitHub が squash merge する。repo の Allow auto-merge を有効化（2026-08-24）し、settings.json の deny から `gh pr merge` を外して allow に `--auto --squash` 形を追加（コンテナは `bypassPermissions` で allow が効かないため、実効は CLAUDE.md の運用規約 + ruleset）。**例外**: `drizzle/` / `.github/**` / `.claude/**` / `docs/adr/**` を触る PR は arm せず人間が merge。fine-grained PAT で auto-merge の GraphQL mutation が通るかは初回 arm で確認（UNVERIFIED — 結果を skill に還元）
+- **脅威モデルは不変**: token（Contents write）は従来から merge API を呼べる — deny が縛っていたのは協調エージェントだけ（skill の threat model 表）。今回変わるのは「協調エージェントの誤りがレビュー無しで本番に出うる」という事故半径で、required check（今は typecheck + build、以後 unit / e2e を追加）がその保険。受容できなくなったら deny を戻すだけで巻き戻せる
