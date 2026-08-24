@@ -3,6 +3,9 @@
 1 行 = 1 節目（PR の merge・ADR・人手作業の完了・本番の状態変化）。`- YYYY-MM-DD 何を（#PR / ADR / skill）`。
 自動ロードはされない。必要なら `head -20 docs/log.md`。作業中の試行錯誤は書かない（git log と PR にある）。
 
+- 2026-08-24 ツールチェーンを wrangler 4 / vite 8 / `@cloudflare/vite-plugin` 1.x / pnpm 11 / TypeScript 7 へ更新、バインディング型を `wrangler types` 生成の global `Env` に移行（生成物は gitignore）、`compatibility_date` を 2026-08-20 へ（2026-08-04 以降は `nodejs_compat` / `nodejs_compat_v2` が既定 ON）（#10）
+- 2026-08-24 #10 merge 後の Deploy が失敗（`pnpm/action-setup@v4` の `version: 9.15.0` と `packageManager: pnpm@11.22.0` の衝突）。**本番は #10 前のビルドのまま**で main と乖離。修正は `.github/workflows/**` = ホストで人手（plans/host-setup.md 0）
+- 2026-08-23 ホスト側の準備が 2 つ完了: 1Password → `./shell.sh` の PAT 注入と、コンテナ内 claude の認証 + MCP 承認。以後 #8 / #9 / #10 はコンテナから push / PR できている（plans/host-setup.md の 2・3 を削除）
 - 2026-08-23 進捗管理を status hub 化: `docs/status.md`（40 行上限）+ `docs/log.md` + SessionStart hook + `/handoff` + CI の上限検査、secrets 不要の `ci.yml`、`docs/roadmap.md` / `docs/plans/host-setup.md`。PROGRESS.md を廃止、CLAUDE.md を規約のみに（#7、skill `agent-status-hub`）
 - 2026-08-23 push / PR 経路を 1 リポ限定 PAT（1Password 注入）に確定。注入点は同日中に `./up.sh`（コンテナ env）→ `./shell.sh`（exec 時のシェル）へ改訂＝ADR-001、docs アクセス 3 層（context7 MCP・docs egress）、`modern-web-guidance` 同梱。relay 下準備は撤去（#6、ADR-001 改訂）
 - 2026-08-22 サンドボックス（node 24、Playwright 1.62.1、host port 5573）・docs・ADR-001 を整備、`RP_ID` / `ORIGIN` を shiraoka ホストへ（#4、#5）。okayus-skills v0.4.0 に passkey / space-invite / R2 の 3 skill を新設（本リポが最初の利用者）

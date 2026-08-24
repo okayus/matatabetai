@@ -1,6 +1,13 @@
 # 計画: 人手でホストから済ませること（完了したら削除）
 
-コンテナ内エージェントに渡す前に、credential を扱う作業を人間がホストで行う。順序に意味がある（可視性 → token → Workers Builds）。各ステップが済んだら `docs/log.md` に 1 行、全部済んだらこのファイルを削除。
+credential を扱う作業を人間がホストで行う。**0 が最優先**（本番が main に追随しない）、以降は 可視性 → Workers Builds → R2 の順。済んだ節は削除して `docs/log.md` に 1 行、全部済んだらこのファイルごと削除（番号は参照が壊れないよう詰めない）。
+
+## 0. `deploy.yml` の pnpm バージョン衝突（最優先。本番が main に追随しない）
+
+#10 の merge 後、Deploy が `Error: Multiple versions of pnpm specified` で落ちている（`pnpm/action-setup@v4` の `version: 9.15.0` vs `package.json` の `packageManager: pnpm@11.22.0`）。`ci.yml` は `version:` を書かない `@v6` なので無傷。本番は #10 前のビルドが動き続けている（`/health` 200。ロジックは変わらないので実害は「main と乖離」だけ）。
+
+- **最短**: `.github/workflows/deploy.yml` から `with: version: 9.15.0` の 3 行を削る。ついでに `pnpm/action-setup@v4` → `@v6`、`actions/checkout@v4` → `@v7`、`actions/setup-node@v4` → `@v7`、`node-version: 22` → `24`。`ci.yml` の `node-version: 22` → `24` も同時に（コンテナは node 24、ルートの `engines` も `>=24`。今は `[WARN] Unsupported engine` が出るだけで CI 自体は緑）
+- **あるいは 4 を先に**: Workers Builds に繋げば `deploy.yml` ごと消えるので、この修正は不要になる
 
 ## 1. リポの可視性と ruleset（roadmap 決めること 3）
 
@@ -9,18 +16,6 @@
   → `no-force-push-anywhere` ruleset（`sandboxed-agent-github-token-via-1password` `references/rulesets-and-policy.md`）
   → `gh api repos/okayus/matatabetai/rulesets` で `enforcement: active` を確認
 - private のままにする場合: ruleset は作れても効かない（Free プラン）。main の保護は `.claude/hooks/block-main-commit.sh` と Claude Code の deny だけと承知の上で進める
-
-## 2. サンドボックス用 GitHub token（skill `sandboxed-agent-github-token-via-1password`）
-
-1. GitHub → Settings → Developer settings → Fine-grained tokens: Resource owner = 自分、Repository access = **`okayus/matatabetai` のみ**、Contents: Read and write、Pull requests: Read and write（任意で Actions: Read）、**Workflows なし**、期限 90 日
-2. 画面から直接 1Password へ: `op item create --category "API Credential" --vault "Private" --title "github-pat-matatabetai-sandbox" 'credential=<token>' 'hostname=github.com' 'expires=<YYYY-MM-DD>'`。先に `op item list --vault Private | grep github-pat-` で同名の item が無いことを確認
-3. `./up.sh` → `docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' matatabetai-dev | grep -c '^GH_TOKEN'` が **`0`**（コンテナ設定に token が無いこと）。もう一度 `./up.sh` を打って `Running` かつ container id が変わらないこと（冪等）
-4. E2E（`eval $(op signin)` → **`./shell.sh`** で入る。中で `echo ${#GH_TOKEN}` が `93`）: `git switch -c claude/e2e-token && git commit --allow-empty -m "chore: e2e token push" && git push -u origin claude/e2e-token && gh pr create --fill && gh pr checks`。否定テスト: PR の無い別ブランチの commit を `git push origin HEAD:main` → public + ruleset なら `GH013` で拒否。`.github/workflows/ci.yml` への変更 push → `without \`workflow\` scope` で拒否されることも確認。fail closed の確認は `docker exec -it matatabetai-dev zsh`（wrapper 無し）で入って `git push` が `401` になること
-5. ホストで E2E の PR を merge（`delete_branch_on_merge` で remote branch は消える）、コンテナ内 `git fetch --prune`
-
-## 3. コンテナ内 claude の初回認証と MCP の承認
-
-`./shell.sh claude` → OAuth URL をホストブラウザで開いてコードを貼る → project MCP（`cloudflare-docs` / `context7`）の trust を承認 → `claude mcp list` が `✔ Connected`。最初のメッセージに `docs/status.md` が注入されていることを確認（SessionStart hook。skill `agent-status-hub` の UNVERIFIED「コンテナ内で hook が発火する」の確認になる → 結果を skill に書き戻す）
 
 ## 4. Workers Builds 接続（skill `cloudflare-workers-builds-keyless-deploy` 0.3.0、`references/dashboard-walkthrough.md`）
 
