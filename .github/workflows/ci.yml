@@ -1,6 +1,8 @@
-# typecheck/build only — no secrets. Deploys: today GH Actions deploy.yml (to be replaced by
-# Workers Builds, see docs/plans/host-setup.md). The main ruleset (once the repo is public)
-# requires this workflow's job id `ci` as a status check — keep the name.
+# CI = このリポ唯一の必須チェック（job id `ci`）。main の protect-main ruleset が要求する — 名前を変えない。
+# 方針: この yaml は「安定シェル」— steps はリポ内のファイル（package.json の scripts / .claude/hooks /
+# .node-version）を呼ぶだけにする。サンドボックスの token は workflow yaml を push できないが、
+# これらのファイルは push できるので、CI の中身の変更はコンテナから完結する。
+# action の @vN 更新は Dependabot（.github/dependabot.yml）が PR を出す。
 name: CI
 
 on:
@@ -24,11 +26,8 @@ jobs:
       - uses: pnpm/action-setup@v6 # no `version:` — it reads packageManager from package.json
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Typecheck
-        run: pnpm -r run check
-      - name: Build
-        run: pnpm -r run build
-      # add `pnpm -r run test` once vitest exists
+      - name: Typecheck and build
+        run: pnpm run ci
