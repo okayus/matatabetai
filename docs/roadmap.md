@@ -9,7 +9,7 @@
 ## Phase 1 — 認証と境界
 
 - [x] ツールチェーン更新（wrangler 4 / `@cloudflare/vite-plugin` 1.x / pnpm 11 / vite 8 / TypeScript 7 / `wrangler types`）
-- [ ] `deploy.yml` の pnpm 衝突を直し、両 workflow の node を 24 へ（ホストから人手。token に `workflows` 権限が無い）
+- [x] `deploy.yml` の pnpm 衝突を直し、両 workflow の node を 24 へ（#12。ci.yml は安定シェル化 #13）
 - [ ] Workers Builds へ移行し `deploy.yml` と GitHub secrets を撤去（儀式は人手、plans/host-setup.md）
 - [ ] passkey 認証（招待制、`INITIAL_REGISTRATION_TOKEN` → `wrangler secret put`）— skill `cloudflare-workers-passkey-auth`
 - [ ] スペース・メンバー・招待リンク — skill `cloudflare-workers-space-membership-invite`（最初の migration から、`space_id NOT NULL`）
@@ -40,7 +40,7 @@
 
 1. ~~認証 / 認可 / 写真~~ → ✅ passkey / per-space + 招待リンク / private R2 + Worker proxy（[ADR-001](adr/001-project-initiation.md)、2026-08-22）
 2. ~~push / PR 経路~~ → ✅ 1 リポ限定 PAT を 1Password で注入（ADR-001 改訂、2026-08-23）
-3. **リポの可視性**: private のままか public にするか。Free プランでは private だと ruleset が効かず、token 経路の境界が hook と deny だけになる。token 配線と Workers Builds の前に決める
+3. ~~リポの可視性~~ → ✅ public（2026-08-23）+ `protect-main` / `no-force-push-anywhere` ruleset + auto-merge opt-in（ADR-001 改訂 2026-08-24。ruleset 作成は plans/host-setup.md 1）
 4. **ドメイン**: workers.dev のまま行くか。custom domain へ移るなら**初回 passkey 登録より前**（`matatabetai.app` は 2026-05 時点で空き）
 5. ~~デプロイ経路~~ → ✅ Workers Builds（キーレス）へ移行（ADR-001 §1。儀式は plans/host-setup.md）
 6. **写真のバックアップ**: 既定案「端末に原本が残るので受容」。写真実装時に ADR

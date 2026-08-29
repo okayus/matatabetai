@@ -3,6 +3,8 @@
 1 行 = 1 節目（PR の merge・ADR・人手作業の完了・本番の状態変化）。`- YYYY-MM-DD 何を（#PR / ADR / skill）`。
 自動ロードはされない。必要なら `head -20 docs/log.md`。作業中の試行錯誤は書かない（git log と PR にある）。
 
+- 2026-08-24 調査で「リポは 2026-08-23 に public 化済みなのに ruleset 未作成」と発覚 → 作成手順を plans/host-setup.md 1 に集約、ci.yml を安定シェル化（`.node-version` / root `ci` script / Dependabot、#13）、merge を `gh pr merge --auto --squash` の opt-in へ（例外は CLAUDE.md。ADR-001 改訂 2026-08-24、#14）
+- 2026-08-24 deploy.yml の pnpm 衝突を修正（`pnpm/action-setup` の version 指定を削除し v6 へ、両 workflow を checkout/setup-node v7 + node 24 に）。本番が #10 のツールチェーンに追随（#12。plans/host-setup.md 0 を削除）
 - 2026-08-24 ツールチェーンを wrangler 4 / vite 8 / `@cloudflare/vite-plugin` 1.x / pnpm 11 / TypeScript 7 へ更新、バインディング型を `wrangler types` 生成の global `Env` に移行（生成物は gitignore）、`compatibility_date` を 2026-08-20 へ（2026-08-04 以降は `nodejs_compat` / `nodejs_compat_v2` が既定 ON）（#10）
 - 2026-08-24 #10 merge 後の Deploy が失敗（`pnpm/action-setup@v4` の `version: 9.15.0` と `packageManager: pnpm@11.22.0` の衝突）。**本番は #10 前のビルドのまま**で main と乖離。修正は `.github/workflows/**` = ホストで人手（plans/host-setup.md 0）
 - 2026-08-23 ホスト側の準備が 2 つ完了: 1Password → `./shell.sh` の PAT 注入と、コンテナ内 claude の認証 + MCP 承認。以後 #8 / #9 / #10 はコンテナから push / PR できている（plans/host-setup.md の 2・3 を削除）
