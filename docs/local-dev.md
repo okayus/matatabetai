@@ -16,6 +16,7 @@ docker exec -it matatabetai-dev zsh   # token 無しで入りたいとき
 - credential は **matatabetai 1 リポ限定の GitHub fine-grained PAT** だけ（Contents + Pull requests、Workflows なし、90 日）。**`./shell.sh` が 1Password から解決して、そのシェル（と子プロセス = claude / git / gh）の env にだけ注入する**。git の credential helper は env を echo する inline 関数、`gh` は `GH_TOKEN` を直接読む。**`docker exec` で直に入ったシェルには token が無い**（commit はできるが push できない = fail closed）。コンテナ設定にも PID 1 にも載らないので `./up.sh` は何度打っても安全。skill `sandboxed-agent-github-token-via-1password` 0.2.0
 - ⚠️ **2026-08-23 改訂（ADR-001）**: 以前は token を compose の `environment:` に入れて `./up.sh` で注入していた。それだと token が**コンテナ設定の一部**になり、op を通さない `docker compose up -d` が「設定変更」と判定されて[コンテナごと作り直される](https://docs.docker.com/reference/cli/docker/compose/up/)＝ token 消失 + 中の Claude セッションも死ぬ（kokemusu で実測）。注入を exec 時に移して切り離した
 - **確認**: `./shell.sh` の中で `test -n "$GH_TOKEN" && echo "len=${#GH_TOKEN}"`（93 文字。値は印字しない）。コンテナ設定に無いことは `docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' matatabetai-dev | grep -c '^GH_TOKEN'` → `0`。⚠️ ホストで `op run -- env` を見ると値は `<concealed by 1Password>`（ちょうど 24 文字）にマスクされるので「24 文字 = 壊れている」ではない
+- 初回は `cp packages/web/.dev.vars.example packages/web/.dev.vars` して `SESSION_SECRET`（`openssl rand -hex 32`）と `INITIAL_REGISTRATION_TOKEN`（任意の文字列）を埋め、`pnpm db:migrate` でローカル D1 に migration を当てる。`ORIGIN=http://localhost:5573` はホストのブラウザで開く URL に合わせる（CSRF と WebAuthn の origin 検査がこれと比較する）
 - dev サーバーはコンテナ内で `pnpm dev -- --host 0.0.0.0` → ホストのブラウザから **http://localhost:5573/**（5173 = 汎用 Vite、5273 = kokemusu、5373 = mazuoboeru、5473 = nyalog と衝突しないため）
 - コンテナ内 `claude` の初回認証は OAuth URL をホストブラウザで開いてコードを貼る。auth は named volume `matatabetai_claude-config` に永続化され `docker compose down` でも消えない。project MCP（`cloudflare-docs` / `context7`）は初回に対話セッションで trust 承認が要る（`claude mcp list` が `⏸ Pending approval` → 承認後 `✔ Connected`）
 - コンテナ内の claude は `bypassPermissions` が既定（起動 command が container-scope の settings に書く）。その下でも `.claude/settings.json` の **deny**（force push・`main` への push・`--delete`・`gh auth`・`gh api`）は効く。allow は bypass では無効（ホスト側セッション向け）。merge は deny ではなく運用で縛る — `gh pr merge --auto --squash` のみ・例外は CLAUDE.md 参照（サーバー側の境界は ruleset、ADR-001 改訂 2026-08-24）
@@ -39,7 +40,14 @@ firewall は default-deny なので「docs を見に行く」には経路が要�
 
 ## Playwright e2e
 
-chromium は image に焼き込み済み（`PLAYWRIGHT_VERSION` build arg = `1.62.1`。1.59.1 は node:24 だと `install chromium` がダウンロード完了直後に永遠に止まる（node:22 では問題なし、2026-08-22 確認）ので使わない）。web パッケージの `@playwright/test` を同じバージョンに pin し、上げるときは両方を同時に上げて `docker compose build`。実行方法は okayus-skills `cloudflare-workers-e2e-playwright` / `playwright-e2e-in-docker-sandbox` を参照（`wrangler dev --persist-to .wrangler/state --ip 127.0.0.1`、rate-limit binding を外した e2e 用 config）。
+chromium は image に焼き込み済み（`PLAYWRIGHT_VERSION` build arg = `1.62.1`。1.59.1 は node:24 だと `install chromium` がダウンロード完了直後に永遠に止まる（node:22 では問題なし、2026-08-22 確認）ので使わない）。web パッケージの `@playwright/test` を同じバージョンに pin し、上げるときは両方を同時に上げて `docker compose build`。
+
+```bash
+pnpm e2e          # build → wrangler dev（ビルド成果物、127.0.0.1:5183）→ 3 spec（初回登録〜招待〜ログイン / 他スペース 404 / セキュリティヘッダ）
+pnpm e2e:server   # サーバーだけ立てておくと 2 回目以降が速い
+```
+
+ローカル D1 の dev データは**全消し**される（global-setup）。vars は `--var` で渡すので `.dev.vars` は使わない。詳細と詰まりどころは `packages/web/e2e/README.md`（skill `cloudflare-workers-e2e-playwright` / `playwright-e2e-in-docker-sandbox`）。CI では回さない — merge 前にここで流す。
 
 ## GitHub token の運用
 

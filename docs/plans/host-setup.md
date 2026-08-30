@@ -1,6 +1,29 @@
 # 計画: 人手でホストから済ませること（完了したら削除）
 
-credential を扱う作業を人間がホストで行う。順は Workers Builds → R2。済んだ節は削除して `docs/log.md` に 1 行、全部済んだらこのファイルごと削除（番号は参照が壊れないよう詰めない）。
+credential を扱う作業を人間がホストで行う。順は 認証 secret（認証 PR の merge 前）→ Workers Builds → R2。済んだ節は削除して `docs/log.md` に 1 行、全部済んだらこのファイルごと削除（番号は参照が壊れないよう詰めない）。
+
+## 6. 認証の本番 secret と初回 owner 登録（ADR-002）
+
+**認証 PR の merge 前**（ホスト、`packages/web` で、`wrangler login` 済み）:
+
+```bash
+pnpm exec wrangler d1 export matatabetai --remote --output="backups/$(date +%F)-pre-auth.sql"   # 念のため（migration は追加のみ・rebuild なし）
+openssl rand -hex 32 | pnpm exec wrangler secret put SESSION_SECRET                            # 無いと /api/auth/* が 500
+pnpm exec wrangler secret list                                                                  # SESSION_SECRET だけ
+```
+
+merge → Deploy 完了後: `curl -s https://matatabetai.shiraoka.workers.dev/health`、`curl -s -X POST https://matatabetai.shiraoka.workers.dev/api/auth/register/begin -H 'Origin: https://matatabetai.shiraoka.workers.dev' -H 'Content-Type: application/json' -d '{"displayName":"x"}'` が `{"error":{"type":"registration_closed"}}`（扉は閉じている）。
+
+**初回 owner 登録**（roadmap 決めること 4 = ドメインを確定してから。passkey 登録後のホスト変更は破壊的）:
+
+```bash
+openssl rand -hex 32 | pnpm exec wrangler secret put INITIAL_REGISTRATION_TOKEN
+# → スマホで https://matatabetai.shiraoka.workers.dev/register を開き、表示名 + トークン → パスキー作成
+pnpm exec wrangler secret delete INITIAL_REGISTRATION_TOKEN                                     # 登録できたらすぐ閉じる
+pnpm exec wrangler d1 execute matatabetai --remote --command "SELECT u.display_name, s.name, sm.role FROM space_members sm JOIN users u ON u.id = sm.user_id JOIN spaces s ON s.id = sm.space_id"
+```
+
+そのあと アカウント画面で 2 台目のパスキーを追加 → スペース設定の「招待リンクを作る」で家族を招待（7 日・1 回）。
 
 ## 4. Workers Builds 接続（skill `cloudflare-workers-builds-keyless-deploy` 0.3.0、`references/dashboard-walkthrough.md`）
 

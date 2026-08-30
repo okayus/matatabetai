@@ -202,8 +202,11 @@ function createMealRecord(input: unknown): Result<MealRecord, ValidationError> {
 pnpm dev -- --host 0.0.0.0   # 開発サーバー → ホストから http://localhost:5573/
 pnpm build                   # プロダクションビルド
 pnpm check                   # pnpm types + type check（format / lint は未導入）
-pnpm run ci                  # CI と同じ検査（-r で check + build。ci.yml はこれを呼ぶだけ）
+pnpm test                    # ユニットテスト（vitest。純粋関数だけ）
+pnpm e2e                     # Playwright 3 spec（ビルド成果物を wrangler dev で配信。ローカル D1 を全消し。CI では回さない）
+pnpm run ci                  # CI と同じ検査（-r で check + test + build。ci.yml はこれを呼ぶだけ）
 pnpm types                   # wrangler.jsonc から worker-configuration.d.ts を生成（gitignore。clone 直後に 1 回）
+pnpm db:generate -- --name <summary>   # schema.ts から drizzle/NNNN_<summary>.sql を生成（rebuild が出たら skill cloudflare-d1-drizzle-migration）
 pnpm db:migrate              # D1 migration をローカルに適用
 pnpm db:migrate:prod         # 本番 D1 に適用（ホスト・要 wrangler login。通常は deploy パイプラインが行う）
 ```
