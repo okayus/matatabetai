@@ -1,16 +1,17 @@
 # 計画: 人手でホストから済ませること（完了したら削除）
 
-credential を扱う作業を人間がホストで行う。順は 認証 secret（認証 PR の merge 前）→ Workers Builds → R2。済んだ節は削除して `docs/log.md` に 1 行、全部済んだらこのファイルごと削除（番号は参照が壊れないよう詰めない）。
+credential を扱う作業を人間がホストで行う。順は 認証 secret（#19 の前後）→ Workers Builds → R2。済んだ節は削除して `docs/log.md` に 1 行、全部済んだらこのファイルごと削除（番号は参照が壊れないよう詰めない）。
 
 ## 6. 認証の本番 secret と初回 owner 登録（ADR-002）
 
-**認証 PR の merge 前**（ホスト、`packages/web` で、`wrangler login` 済み）:
+**#19 の merge 前後どちらでも**（ホスト、`packages/web` で、`wrangler login` 済み。無い間は `/api/auth/*` の署名を伴う経路が 500 になるだけで、登録の扉は閉じたまま）:
 
 ```bash
-pnpm exec wrangler d1 export matatabetai --remote --output="backups/$(date +%F)-pre-auth.sql"   # 念のため（migration は追加のみ・rebuild なし）
-openssl rand -hex 32 | pnpm exec wrangler secret put SESSION_SECRET                            # 無いと /api/auth/* が 500
-pnpm exec wrangler secret list                                                                  # SESSION_SECRET だけ
+openssl rand -hex 32 | pnpm exec wrangler secret put SESSION_SECRET   # session JWT と challenge cookie の署名鍵。一度だけ
+pnpm exec wrangler secret list                                         # SESSION_SECRET だけ
 ```
+
+backup は今回不要（本番 D1 にデータが無く、0001 は CREATE TABLE / INDEX のみで rebuild なし）。データの入った表を触る migration から skill `cloudflare-d1-drizzle-migration` の runbook に従う。
 
 merge → Deploy 完了後: `curl -s https://matatabetai.shiraoka.workers.dev/health`、`curl -s -X POST https://matatabetai.shiraoka.workers.dev/api/auth/register/begin -H 'Origin: https://matatabetai.shiraoka.workers.dev' -H 'Content-Type: application/json' -d '{"displayName":"x"}'` が `{"error":{"type":"registration_closed"}}`（扉は閉じている）。
 
