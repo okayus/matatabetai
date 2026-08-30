@@ -13,6 +13,7 @@ docker exec -it matatabetai-dev zsh   # token 無しで入りたいとき
 ```
 
 - ホスト側は**エディタと git だけ**（bind mount なので編集は即時反映）。コンテナに Cloudflare の credential は入れない（`wrangler login` もしない）
+- ホストで wrangler が要る作業（`wrangler login`、`secret put`、`d1 … --remote`、R2 bucket 作成）は `packages/web` で **`./node_modules/.bin/wrangler`** を直接叩く。コンテナが lockfile どおりに入れたものが bind mount でホストからも見える（要 host node 24）。グローバルに入れない。**ホストで `pnpm exec` / `pnpm run` は打たない** — pnpm 11 は実行前に install を自動で走らせ、コンテナが作った `node_modules`（store が `/workspace/.pnpm-store`）と設定が食い違うので消して入れ直そうとする。`pnpm dlx`（`pnpx`）は `node_modules` に触らないが npm からホストに落とすので次善
 - credential は **matatabetai 1 リポ限定の GitHub fine-grained PAT** だけ（Contents + Pull requests、Workflows なし、90 日）。**`./shell.sh` が 1Password から解決して、そのシェル（と子プロセス = claude / git / gh）の env にだけ注入する**。git の credential helper は env を echo する inline 関数、`gh` は `GH_TOKEN` を直接読む。**`docker exec` で直に入ったシェルには token が無い**（commit はできるが push できない = fail closed）。コンテナ設定にも PID 1 にも載らないので `./up.sh` は何度打っても安全。skill `sandboxed-agent-github-token-via-1password` 0.2.0
 - ⚠️ **2026-08-23 改訂（ADR-001）**: 以前は token を compose の `environment:` に入れて `./up.sh` で注入していた。それだと token が**コンテナ設定の一部**になり、op を通さない `docker compose up -d` が「設定変更」と判定されて[コンテナごと作り直される](https://docs.docker.com/reference/cli/docker/compose/up/)＝ token 消失 + 中の Claude セッションも死ぬ（kokemusu で実測）。注入を exec 時に移して切り離した
 - **確認**: `./shell.sh` の中で `test -n "$GH_TOKEN" && echo "len=${#GH_TOKEN}"`（93 文字。値は印字しない）。コンテナ設定に無いことは `docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' matatabetai-dev | grep -c '^GH_TOKEN'` → `0`。⚠️ ホストで `op run -- env` を見ると値は `<concealed by 1Password>`（ちょうど 24 文字）にマスクされるので「24 文字 = 壊れている」ではない
@@ -63,5 +64,6 @@ pnpm e2e:server   # サーバーだけ立てておくと 2 回目以降が速い
 - **コンテナ内で `git push` が `401` / `gh` が未ログイン** → `./shell.sh` 以外で開いたシェルにいる。`eval $(op signin)`（desktop app 統合があれば不要）→ `./shell.sh`。コンテナの作り直しは不要
 - **`docker inspect` の `Config.Env` に `=` の無い裸の `GH_TOKEN` がある** → 旧方式の残骸。`grep -c '^GH_TOKEN=.'`（`=` の後に 1 文字以上）で確認する。`cut -d= -f1 | grep -c` は裸のキーを「注入済み」と誤答する
 - **ホストで `pnpm` を叩いて hook に止められた** → `docker compose exec dev pnpm …` に書き換える（`.claude/hooks/require-container.py`）
+- **ホストで `pnpm exec …` が `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`** → pnpm 11 の自動 install がコンテナの `node_modules` を消そうとして、stdin がパイプ（TTY なし）なので確認できず中断した。**中断が正しい** — `y` と答えたり `CI=true` / `confirmModulesPurge=false` を付けたりするとコンテナの `node_modules` が消える。`./node_modules/.bin/<bin>` を直接叩く（2026-08-30、`wrangler secret put` で実測）
 - **`claude` の `/model` に Fable 系が出ない** → `DISABLE_TELEMETRY` を compose env に足していないか確認（Statsig を塞ぐと flag-gated model が隠れる）
 - **Context7 が応答しない** → `mcp.context7.com` は AWS ELB で IP が変わる。firewall は起動時に解決するので `docker compose restart`

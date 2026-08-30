@@ -73,7 +73,7 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 
 開発は **egress 制限つき Docker サンドボックス内**で行う（[docs/local-dev.md](./docs/local-dev.md)、skill `claude-code-docker-sandbox`）。起動は **`./up.sh`**（= 素の `docker compose up -d`。資格情報ゼロ・冪等）、**token 付きシェルは `./shell.sh`**（= `op read で op:// 参照を解決 → docker exec -e GH_TOKEN matatabetai-dev …`）。credential は **matatabetai 1 リポ限定の GitHub fine-grained PAT**（Contents + Pull requests、Workflows なし、90 日）だけで、`./shell.sh` が開いたシェルの env にのみ存在し、ディスクにもコンテナ設定にも書かない（skill `sandboxed-agent-github-token-via-1password` 0.2.0、ADR-001 改訂 2026-08-23）。Cloudflare のトークンは持たず `wrangler login` もしない。merge は人間がホストで行う。
 
-- ホストで `pnpm` / `npx` / `wrangler` などを直接叩かない（`.claude/hooks/require-container.py` が止める）。`docker compose exec dev <cmd>` 経由で実行する
+- ホストで `pnpm` / `npx` / `wrangler` などを直接叩かない（`.claude/hooks/require-container.py` が止める）。`docker compose exec dev <cmd>` 経由で実行する。人間がホストで wrangler を使う作業（login / secret / `--remote`）は `packages/web/node_modules/.bin/wrangler` を直接（`pnpm exec` は pnpm 11 の自動 install でコンテナの `node_modules` を壊す — docs/local-dev.md）
 - PR / CI の状態は **`gh pr view` / `gh pr checks`**（fine-grained PAT は Checks REST API を呼べないので `gh api …/check-runs` は使わない。`gh api` は deny）
 - merge 後の deploy 完了は `gh run list` / `gh run view` と本番 `/health`（`https://matatabetai.shiraoka.workers.dev/health`）で確認する
 
@@ -208,5 +208,5 @@ pnpm run ci                  # CI と同じ検査（-r で check + test + build�
 pnpm types                   # wrangler.jsonc から worker-configuration.d.ts を生成（gitignore。clone 直後に 1 回）
 pnpm db:generate -- --name <summary>   # schema.ts から drizzle/NNNN_<summary>.sql を生成（rebuild が出たら skill cloudflare-d1-drizzle-migration）
 pnpm db:migrate              # D1 migration をローカルに適用
-pnpm db:migrate:prod         # 本番 D1 に適用（ホスト・要 wrangler login。通常は deploy パイプラインが行う）
+pnpm db:migrate:prod         # 本番 D1 に適用。通常は deploy パイプラインが行う。人手なら packages/web で ./node_modules/.bin/wrangler d1 migrations apply matatabetai --remote（ホストで pnpm 経由は不可）
 ```
