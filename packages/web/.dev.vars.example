@@ -1,5 +1,16 @@
 # Copy to .dev.vars and fill values. .dev.vars is gitignored.
+# `wrangler types` は .dev.vars のキーも Env に含める（worker/env.ts の Secrets と交差させている）。
 
-# WebAuthn / origin (localhost for dev; prod uses wrangler.jsonc vars)
+# openssl rand -hex 32 — session JWT と challenge cookie の署名鍵
+SESSION_SECRET=
+
+# WebAuthn / origin。本番値は wrangler.jsonc の vars（固定済）。ローカルはブラウザで開くホストに合わせる:
+#   ホストのブラウザから http://localhost:5573（docker compose の port 5573 → コンテナ 5173）
 RP_ID=localhost
-ORIGIN=http://localhost:5173
+ORIGIN=http://localhost:5573
+
+# 初回 owner 登録の一回きりトークン。ローカルでは任意の文字列でよい。本番は wrangler secret put → 登録 → delete
+INITIAL_REGISTRATION_TOKEN=
+
+# パスキーを飛ばして固定ユーザで入る（ORIGIN が localhost のときだけ効く）。本番に置かない
+# DEV_BYPASS_USER_ID=00000000-0000-4000-8000-000000000000

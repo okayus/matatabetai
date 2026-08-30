@@ -6,11 +6,15 @@
     "build": "pnpm --filter @matatabetai/web build",
     "deploy": "pnpm --filter @matatabetai/web run deploy",
     "check": "pnpm --filter @matatabetai/web check",
-    "ci": "pnpm -r run check && pnpm -r run build",
+    "ci": "pnpm -r run check && pnpm -r run test && pnpm -r run build",
     "types": "pnpm --filter @matatabetai/web types",
     "db:migrate": "pnpm --filter @matatabetai/web db:migrate",
-    "db:migrate:prod": "pnpm --filter @matatabetai/web db:migrate:prod"
+    "db:migrate:prod": "pnpm --filter @matatabetai/web db:migrate:prod",
+    "test": "pnpm --filter @matatabetai/web test",
+    "e2e": "pnpm --filter @matatabetai/web e2e"
   },
   "packageManager": "pnpm@11.22.0",
-  "engines": { "node": ">=24" }
+  "engines": {
+    "node": ">=24"
+  }
 }
