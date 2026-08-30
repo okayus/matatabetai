@@ -11,8 +11,8 @@
 - [x] ツールチェーン更新（wrangler 4 / `@cloudflare/vite-plugin` 1.x / pnpm 11 / vite 8 / TypeScript 7 / `wrangler types`）
 - [x] `deploy.yml` の pnpm 衝突を直し、両 workflow の node を 24 へ（#12。ci.yml は安定シェル化 #13）
 - [ ] Workers Builds へ移行し `deploy.yml` と GitHub secrets を撤去（儀式は人手、plans/host-setup.md）
-- [ ] passkey 認証（招待制、`INITIAL_REGISTRATION_TOKEN` → `wrangler secret put`）— skill `cloudflare-workers-passkey-auth`
-- [ ] スペース・メンバー・招待リンク — skill `cloudflare-workers-space-membership-invite`（最初の migration から、`space_id NOT NULL`）
+- [x] passkey 認証（招待制、`INITIAL_REGISTRATION_TOKEN` → `wrangler secret put`）— skill `cloudflare-workers-passkey-auth`
+- [x] スペース・メンバー・招待リンク — skill `cloudflare-workers-space-membership-invite`（最初の migration から、`space_id NOT NULL`）
 
 ## Phase 2 — 記録できる（MVP）
 
