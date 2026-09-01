@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   createMeal,
   createSpace,
   deleteMeal,
+  deleteMealPhoto,
   describeFailure,
   listMeals,
+  mealPhotoUrl,
   setMataTabetai,
+  uploadMealPhoto,
   type CreateMealBody,
   type Me,
   type Meal,
+  type MealPhoto,
   type MealType,
   type RecipeSource,
   type SpaceSummary,
@@ -16,6 +20,7 @@ import {
 import { useAuth } from "../auth";
 import { Link } from "../components/Link";
 import { formatEatenOn, todayLocalDate } from "../format";
+import { preparePhoto, type PreparedPhoto } from "../lib/image-prep";
 
 const MEAL_TYPE_LABEL: Record<MealType, string> = {
   breakfast: "朝",
@@ -45,6 +50,7 @@ export function HomePage({ me }: { me: Me }) {
 function MealsSection({ space }: { space: SpaceSummary }) {
   const [meals, setMeals] = useState<Meal[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ meal: Meal; photo: MealPhoto } | null>(null);
 
   const load = useCallback(async () => {
     const r = await listMeals(space.id);
@@ -85,6 +91,23 @@ function MealsSection({ space }: { space: SpaceSummary }) {
     }
     setMeals((prev) => (prev ?? []).filter((x) => x.id !== m.id));
   };
+  const removePhoto = async (sel: { meal: Meal; photo: MealPhoto }) => {
+    if (!confirm("この写真を削除しますか？")) return;
+    setError(null);
+    const r = await deleteMealPhoto(space.id, sel.meal.id, sel.photo.id);
+    if (r.isErr()) {
+      setError(describeFailure(r.error));
+      return;
+    }
+    setMeals((prev) =>
+      (prev ?? []).map((x) =>
+        x.id === sel.meal.id
+          ? { ...x, photos: x.photos.filter((p) => p.id !== sel.photo.id) }
+          : x,
+      ),
+    );
+    setLightbox(null);
+  };
 
   return (
     <>
@@ -107,14 +130,82 @@ function MealsSection({ space }: { space: SpaceSummary }) {
               {/* list-style を消した ul は Safari が list 扱いしなくなるので role を戻す */}
               <ul className="list" role="list">
                 {items.map((m) => (
-                  <MealItem key={m.id} meal={m} onToggle={toggle} onRemove={remove} />
+                  <MealItem
+                    key={m.id}
+                    spaceId={space.id}
+                    meal={m}
+                    onToggle={toggle}
+                    onRemove={remove}
+                    onOpenPhoto={(meal, photo) => setLightbox({ meal, photo })}
+                  />
                 ))}
               </ul>
             </div>
           ))
         )}
       </div>
+      <PhotoLightbox
+        spaceId={space.id}
+        selected={lightbox}
+        onClose={() => setLightbox(null)}
+        onDelete={removePhoto}
+      />
     </>
+  );
+}
+
+// 拡大表示。<dialog> の showModal で開く（Esc は native、背景タップは e.target === dialog で判定）
+function PhotoLightbox({
+  spaceId,
+  selected,
+  onClose,
+  onDelete,
+}: {
+  spaceId: string;
+  selected: { meal: Meal; photo: MealPhoto } | null;
+  onClose: () => void;
+  onDelete: (sel: { meal: Meal; photo: MealPhoto }) => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    if (selected && !dialog.open) dialog.showModal();
+    if (!selected && dialog.open) dialog.close();
+  }, [selected]);
+  return (
+    <dialog
+      ref={ref}
+      className="lightbox"
+      aria-label={selected ? `${selected.meal.name} の写真` : "写真の拡大表示"}
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === ref.current) onClose();
+      }}
+    >
+      {selected && (
+        <div className="stack stack--tight">
+          <img
+            src={mealPhotoUrl(spaceId, selected.meal.id, selected.photo.id)}
+            alt={`${selected.meal.name} の写真`}
+            width={selected.photo.width}
+            height={selected.photo.height}
+          />
+          <div className="row row--between">
+            <button
+              type="button"
+              className="btn btn--danger btn--small"
+              onClick={() => onDelete(selected)}
+            >
+              写真を削除
+            </button>
+            <button type="button" className="btn btn--small" onClick={onClose}>
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
+    </dialog>
   );
 }
 
@@ -129,10 +220,52 @@ function groupByEatenOn(meals: Meal[]): [string, Meal[]][] {
   return groups;
 }
 
+// 選択済みでまだ送っていない写真。preview はサムネ blob の object URL（外したら revoke）
+type PendingPhoto = { key: string; prepared: PreparedPhoto; previewUrl: string };
+
 function MealForm({ spaceId, onCreated }: { spaceId: string; onCreated: (m: Meal) => void }) {
   const [sourceKind, setSourceKind] = useState<RecipeSource["type"]>("none");
+  const [pending, setPending] = useState<PendingPhoto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const onPickPhotos = async (e: ChangeEvent<HTMLInputElement>) => {
+    // currentTarget は await の後で使えない。FileList も value 消去で空になるので先に配列へ
+    const files = Array.from(e.currentTarget.files ?? []);
+    e.currentTarget.value = "";
+    if (files.length === 0) return;
+    setBusy(true);
+    setError(null);
+    let unreadable = false;
+    for (const file of files) {
+      const prepared = await preparePhoto(file);
+      if (!prepared) {
+        unreadable = true;
+        continue;
+      }
+      setPending((prev) => [
+        ...prev,
+        {
+          key: crypto.randomUUID(),
+          prepared,
+          previewUrl: URL.createObjectURL(prepared.thumb.blob),
+        },
+      ]);
+    }
+    if (unreadable) {
+      setError(
+        "読み込めない写真がありました（HEIC の可能性）。iPhone は 設定 → カメラ → フォーマット → 互換性優先 にするか、JPEG で共有してください。",
+      );
+    }
+    setBusy(false);
+  };
+  const removePending = (key: string) => {
+    setPending((prev) => {
+      const target = prev.find((p) => p.key === key);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((p) => p.key !== key);
+    });
+  };
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -158,12 +291,26 @@ function MealForm({ spaceId, onCreated }: { spaceId: string; onCreated: (m: Meal
     setBusy(true);
     setError(null);
     const r = await createMeal(spaceId, body);
-    setBusy(false);
     if (r.isErr()) {
+      setBusy(false);
       setError(describeFailure(r.error));
       return;
     }
-    onCreated(r.value);
+    // meal は出来ているので、写真が一部失敗しても投稿は一覧に出す（失敗分だけ知らせる）
+    const photos: MealPhoto[] = [];
+    let photoFailure: string | null = null;
+    for (const p of pending) {
+      const up = await uploadMealPhoto(spaceId, r.value.id, p.prepared);
+      if (up.isOk()) photos.push(up.value);
+      else photoFailure = describeFailure(up.error);
+    }
+    setBusy(false);
+    onCreated({ ...r.value, photos });
+    for (const p of pending) URL.revokeObjectURL(p.previewUrl);
+    setPending([]);
+    if (photoFailure) {
+      setError(`記録は保存しましたが、写真を送れませんでした: ${photoFailure}`);
+    }
     form.reset();
     setSourceKind("none");
   };
@@ -198,6 +345,38 @@ function MealForm({ spaceId, onCreated }: { spaceId: string; onCreated: (m: Meal
         </span>
         <input id="mealTags" name="tags" aria-describedby="mealTagsHint" />
       </div>
+      <div className="field">
+        <label htmlFor="mealPhotos">写真</label>
+        <span id="mealPhotosHint" className="hint">
+          複数選べます。この端末で縮小してから送ります（位置情報は残りません）
+        </span>
+        <input
+          id="mealPhotos"
+          type="file"
+          accept="image/*"
+          multiple
+          aria-describedby="mealPhotosHint"
+          disabled={busy}
+          onChange={(e) => void onPickPhotos(e)}
+        />
+      </div>
+      {pending.length > 0 && (
+        <ul className="photo-strip" role="list">
+          {pending.map((p, i) => (
+            <li key={p.key} className="photo-pending">
+              <img src={p.previewUrl} alt={`選択中の写真 ${i + 1}`} />
+              <button
+                type="button"
+                className="btn btn--small"
+                disabled={busy}
+                onClick={() => removePending(p.key)}
+              >
+                外す<span className="visually-hidden">（選択中の写真 {i + 1}）</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="field">
         <label htmlFor="mealSourceKind">レシピ・リンク</label>
         <select
@@ -239,13 +418,17 @@ function MealForm({ spaceId, onCreated }: { spaceId: string; onCreated: (m: Meal
 }
 
 function MealItem({
+  spaceId,
   meal,
   onToggle,
   onRemove,
+  onOpenPhoto,
 }: {
+  spaceId: string;
   meal: Meal;
   onToggle: (m: Meal) => void;
   onRemove: (m: Meal) => void;
+  onOpenPhoto: (meal: Meal, photo: MealPhoto) => void;
 }) {
   return (
     <li className="list-item list-item--column">
@@ -253,6 +436,28 @@ function MealItem({
         <strong>{meal.name}</strong>
         {meal.mealType && <span className="badge">{MEAL_TYPE_LABEL[meal.mealType]}</span>}
       </div>
+      {meal.photos.length > 0 && (
+        <ul className="photo-strip" role="list">
+          {meal.photos.map((p, i) => (
+            <li key={p.id}>
+              <button
+                type="button"
+                className="photo-thumb"
+                onClick={() => onOpenPhoto(meal, p)}
+              >
+                <img
+                  src={mealPhotoUrl(spaceId, meal.id, p.id, p.hasThumb ? "thumb" : undefined)}
+                  alt={`${meal.name} の写真 ${i + 1} を拡大`}
+                  width={p.width}
+                  height={p.height}
+                  loading="lazy"
+                  decoding="async"
+                />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       {meal.tags.length > 0 && (
         <div className="row">
           {meal.tags.map((t) => (
