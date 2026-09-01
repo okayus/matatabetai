@@ -43,6 +43,20 @@ test("a member of space A gets 404 for space B (API and UI)", async ({ page, bas
   expect(crossPatch.status()).toBe(404);
   expect(await crossPatch.json()).toEqual({ error: { type: "not_found" } });
 
+  // 写真ルートも同じ（photo の認可連鎖は meal の space 一致で切れる。R2 には触れない）
+  const crossPhoto = await page.request.get(
+    `/api/spaces/${mine}/meals/${OTHER_MEAL_ID}/photos/00000000-0000-4000-8000-000000000001`,
+  );
+  expect(crossPhoto.status()).toBe(404);
+  expect(await crossPhoto.json()).toEqual({ error: { type: "not_found" } });
+
+  const crossUpload = await page.request.post(
+    `/api/spaces/${OTHER_SPACE_ID}/meals/${OTHER_MEAL_ID}/photos`,
+    { headers: origin },
+  );
+  expect(crossUpload.status()).toBe(404);
+  expect(await crossUpload.json()).toEqual({ error: { type: "not_found" } });
+
   await page.goto(`/spaces/${OTHER_SPACE_ID}/settings`);
   await expect(page.getByText("アクセス権がありません")).toBeVisible();
 });

@@ -1,12 +1,14 @@
 import { expect, test } from "@playwright/test";
 import { E2E_INITIAL_REGISTRATION_TOKEN } from "../playwright.config";
+import { PNG_8x8 } from "./fixtures/png";
 import { enableVirtualAuthenticator } from "./helpers/webauthn";
 
 // 配線の事実: 初回登録（パスキー作成 → users/spaces/space_members/credentials/sessions）→
-// リロードでセッションが残る → 投稿作成（meals/tags/meal_tags）→ またたべたいトグル →
-// リロードで投稿とトグルが残る → 削除 → 招待リンク発行 → 別ブラウザが招待から登録 →
+// リロードでセッションが残る → 投稿作成（meals/tags/meal_tags + 写真 2 枚: 縮小 → R2 →
+// proxy 配信・304）→ 写真 1 枚削除 → またたべたいトグル → リロードで投稿・トグル・写真が残る →
+// 削除（R2 も消える）→ 招待リンク発行 → 別ブラウザが招待から登録 →
 // メンバーに並ぶ → ログアウト → パスキーでログインし直す。ドメインの意味はユニットに譲る。
-test("register → reload → meal record → invite → second member → logout → login", async ({ page, browser, baseURL }) => {
+test("register → reload → meal record with photos → invite → second member → logout → login", async ({ page, browser, baseURL }) => {
   await enableVirtualAuthenticator(page);
 
   await page.goto("/register");
@@ -22,15 +24,52 @@ test("register → reload → meal record → invite → second member → logou
   await page.reload();
   await expect(page.getByRole("heading", { name: /こんにちは、e2e-owner さん/ })).toBeVisible();
 
-  // 投稿作成（meals / tags / meal_tags が繋がっている）
+  // 投稿作成（meals / tags / meal_tags が繋がっている）+ 写真 2 枚。
+  // setInputFiles の PNG をクライアントが canvas で JPEG に縮小してから multipart で送る
   await page.getByLabel("料理名").fill("肉じゃが");
   await page.getByLabel("タグ").fill("じゃがいも 牛肉");
+  await page.getByLabel("写真", { exact: true }).setInputFiles([
+    { name: "one.png", mimeType: "image/png", buffer: PNG_8x8 },
+    { name: "two.png", mimeType: "image/png", buffer: PNG_8x8 },
+  ]);
+  await expect(page.getByAltText("選択中の写真 2")).toBeVisible();
   await page.getByRole("button", { name: "記録する" }).click();
   await expect(page.getByText("肉じゃが", { exact: true })).toBeVisible();
   await expect(page.getByText("じゃがいも", { exact: true })).toBeVisible();
   await expect(page.getByText("牛肉", { exact: true })).toBeVisible();
 
-  // またたべたいトグル → リロードで投稿もトグルも残る（永続化はユニットでは検知不能）
+  // サムネ 2 枚が実際に描画された（proxy route がブラウザに解釈できるバイト列を返した事実）
+  const thumbs = page.locator("img[src*='/photos/']");
+  await expect(thumbs).toHaveCount(2);
+  await expect
+    .poll(async () => thumbs.first().evaluate((el: HTMLImageElement) => el.naturalWidth))
+    .toBeGreaterThan(0);
+  const photoPaths = await thumbs.evaluateAll((els) =>
+    els.map((el) => new URL((el as HTMLImageElement).src).pathname),
+  );
+
+  // 認可つき配信のヘッダ（private のみ・sniff 抑止）と、If-None-Match → 304 の条件つき GET
+  const direct = await page.request.get(photoPaths[0]!);
+  expect(direct.status()).toBe(200);
+  expect(direct.headers()["content-type"]).toBe("image/jpeg");
+  expect(direct.headers()["cache-control"]).toBe("private, max-age=3600");
+  expect(direct.headers()["x-content-type-options"]).toBe("nosniff");
+  const etag = direct.headers()["etag"];
+  expect(etag).toBeTruthy();
+  const conditional = await page.request.get(photoPaths[0]!, {
+    headers: { "If-None-Match": etag! },
+  });
+  expect(conditional.status()).toBe(304);
+
+  // lightbox で 1 枚目を拡大 → 削除（R2 → D1 の順で消え、route が 404 になる）
+  await page.getByRole("button", { name: "肉じゃが の写真 1 を拡大" }).click();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "写真を削除" }).click();
+  await expect(thumbs).toHaveCount(1);
+  await expect.poll(async () => (await page.request.get(photoPaths[0]!)).status()).toBe(404);
+  expect((await page.request.get(photoPaths[1]!)).status()).toBe(200);
+
+  // またたべたいトグル → リロードで投稿もトグルも写真も残る（永続化はユニットでは検知不能）
   const mataButton = page.getByRole("button", { name: /またたべたい/ });
   await expect(mataButton).toHaveAttribute("aria-pressed", "false");
   await mataButton.click();
@@ -41,12 +80,14 @@ test("register → reload → meal record → invite → second member → logou
     "aria-pressed",
     "true",
   );
+  await expect(page.locator("img[src*='/photos/']")).toHaveCount(1);
 
-  // 削除（confirm を受ける）
+  // 削除（confirm を受ける）。meal と一緒に残りの写真も消える（R2 object ごと）
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: /削除/ }).click();
   await expect(page.getByText("肉じゃが", { exact: true })).toHaveCount(0);
   await expect(page.getByText("まだ記録がありません", { exact: false })).toBeVisible();
+  await expect.poll(async () => (await page.request.get(photoPaths[1]!)).status()).toBe(404);
 
   // 招待リンクを発行
   await page.getByRole("link", { name: "設定" }).click();
