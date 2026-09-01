@@ -26,7 +26,7 @@
 - 将来の一般公開に備え、bot scan 対策・レート制限・認可境界はインフラ側で最初から持つ
 - 家族規模の運用で十分な範囲に留める: リアルタイム同期・通知・栄養計算は要件外
 
-## ドメインモデル（草案 — 実装時に ADR で確定する。認証・スペースの 6 表は [ADR-002](adr/002-auth-spaces-invites.md)、meals / tags / meal_tags は [ADR-003](adr/003-meals-tags.md) で確定済み。meal_photos は写真実装時）
+## ドメインモデル（草案 — 実装時に ADR で確定する。認証・スペースの 6 表は [ADR-002](adr/002-auth-spaces-invites.md)、meals / tags / meal_tags は [ADR-003](adr/003-meals-tags.md)、meal_photos は [ADR-004](adr/004-meal-photos-r2.md) で確定済み）
 
 ```
 spaces / space_members / invites          ← skill cloudflare-workers-space-membership-invite
