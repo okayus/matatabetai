@@ -37,6 +37,34 @@ export type Credential = {
   createdAt: string;
   lastUsedAt: string | null;
 };
+export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
+export type RecipeSource =
+  | { type: "url"; url: string }
+  | { type: "text"; text: string }
+  | { type: "none" };
+export type MealTag = { id: string; name: string };
+export type Meal = {
+  id: string;
+  name: string;
+  eatenOn: string;
+  mealType: MealType | null;
+  recipeSource: RecipeSource;
+  note: string | null;
+  mataTabetai: boolean;
+  tags: MealTag[];
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type CreateMealBody = {
+  name: string;
+  eatenOn: string;
+  mealType: MealType | null;
+  recipeSource: RecipeSource;
+  note: string | null;
+  tags: string[];
+};
 
 export type ApiFailure =
   | { kind: "http"; status: number; type: string; message: string }
@@ -124,6 +152,18 @@ export const renameSpace = (spaceId: string, name: string) =>
   patch<{ id: string; name: string }>(`/api/spaces/${spaceId}`, { name });
 export const removeMember = (spaceId: string, userId: string) =>
   del<Record<string, never>>(`/api/spaces/${spaceId}/members/${userId}`);
+
+// --- meals --------------------------------------------------------------------------------
+export const listMeals = (spaceId: string) => api<Meal[]>(`/api/spaces/${spaceId}/meals`);
+export const createMeal = (spaceId: string, body: CreateMealBody) =>
+  post<Meal>(`/api/spaces/${spaceId}/meals`, body);
+export const setMataTabetai = (spaceId: string, mealId: string, mataTabetai: boolean) =>
+  patch<{ id: string; mataTabetai: boolean; updatedAt: string }>(
+    `/api/spaces/${spaceId}/meals/${mealId}`,
+    { mataTabetai },
+  );
+export const deleteMeal = (spaceId: string, mealId: string) =>
+  del<Record<string, never>>(`/api/spaces/${spaceId}/meals/${mealId}`);
 
 export const listInvites = (spaceId: string) => api<PendingInvite[]>(`/api/spaces/${spaceId}/invites`);
 export const issueInvite = (spaceId: string) => post<IssuedInvite>(`/api/spaces/${spaceId}/invites`);

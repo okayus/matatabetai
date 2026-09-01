@@ -75,7 +75,9 @@
     outline: 3px solid var(--color-focus);
     outline-offset: 2px;
   }
-  input {
+  input,
+  textarea,
+  select {
     inline-size: 100%;
     min-block-size: var(--tap);
     padding: var(--space-2) var(--space-3);
@@ -84,8 +86,16 @@
     background: var(--color-surface);
     font-size: 1rem;
   }
-  input:user-invalid {
+  textarea {
+    resize: vertical;
+  }
+  :where(input, textarea, select):user-invalid {
     border-color: var(--color-danger);
+  }
+  summary {
+    cursor: pointer;
+    color: var(--color-accent);
+    font-weight: 600;
   }
   label {
     font-weight: 600;
@@ -146,6 +156,9 @@
     flex-direction: column;
     gap: var(--space-1);
   }
+  .field--grow {
+    flex: 1 1 12rem;
+  }
   .hint {
     color: var(--color-muted);
     font-size: 0.875rem;
@@ -201,6 +214,15 @@
   .list-item:not(:last-child) {
     border-block-end: 1px solid var(--color-border);
   }
+  .list-item--column {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+  .btn[aria-pressed="true"] {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
   .badge {
     display: inline-block;
     padding: 0 var(--space-2);
@@ -219,6 +241,9 @@
 @layer utilities {
   .muted {
     color: var(--color-muted);
+  }
+  .pre-wrap {
+    white-space: pre-wrap;
   }
   .visually-hidden {
     position: absolute;
