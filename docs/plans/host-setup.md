@@ -7,8 +7,10 @@ credential を扱う作業を人間がホストで行う。**ホストの wrangl
 ドメインは workers.dev で確定済み（roadmap 決めること 4、2026-09-01）なのですぐ実行できる。ホスト、`packages/web` で:
 
 ```bash
-openssl rand -hex 32 | ./node_modules/.bin/wrangler secret put INITIAL_REGISTRATION_TOKEN
-# → スマホで https://matatabetai.shiraoka.workers.dev/register を開き、表示名 + トークン → パスキー作成
+# トークンは /register に自分で打つので、secret へ流す前に表示する（delete までの短命なので画面に出してよい）
+TOKEN=$(openssl rand -hex 32) && echo "$TOKEN"
+printf %s "$TOKEN" | ./node_modules/.bin/wrangler secret put INITIAL_REGISTRATION_TOKEN
+# → スマホで https://matatabetai.shiraoka.workers.dev/register を開き、表示名 + トークン（コピペで渡す）→ パスキー作成
 ./node_modules/.bin/wrangler secret delete INITIAL_REGISTRATION_TOKEN     # 登録できたらすぐ閉じる
 ./node_modules/.bin/wrangler secret list                                  # SESSION_SECRET だけに戻る
 ./node_modules/.bin/wrangler d1 execute matatabetai --remote --command "SELECT u.display_name, s.name, sm.role FROM space_members sm JOIN users u ON u.id = sm.user_id JOIN spaces s ON s.id = sm.space_id"
