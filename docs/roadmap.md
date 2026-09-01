@@ -41,6 +41,6 @@
 1. ~~認証 / 認可 / 写真~~ → ✅ passkey / per-space + 招待リンク / private R2 + Worker proxy（[ADR-001](adr/001-project-initiation.md)、2026-08-22）
 2. ~~push / PR 経路~~ → ✅ 1 リポ限定 PAT を 1Password で注入（ADR-001 改訂、2026-08-23）
 3. ~~リポの可視性~~ → ✅ public（2026-08-23）+ `protect-main` / `no-force-push-anywhere` ruleset + auto-merge opt-in（ADR-001 改訂 2026-08-24。ruleset 作成は plans/host-setup.md 1）
-4. **ドメイン**: workers.dev のまま行くか。custom domain へ移るなら**初回 passkey 登録より前**（`matatabetai.app` は 2026-05 時点で空き）
+4. ~~ドメイン~~ → ✅ workers.dev のまま（2026-09-01。`matatabetai.shiraoka.workers.dev` に RP_ID/ORIGIN 固定済みで作業なし。後から custom domain へ移るなら credential 移行戦略ごと再検討 — CLAUDE.md「RP_ID / ORIGIN」）
 5. ~~デプロイ経路~~ → ✅ Workers Builds（キーレス）へ移行（ADR-001 §1。儀式は plans/host-setup.md）
 6. **写真のバックアップ**: 既定案「端末に原本が残るので受容」。写真実装時に ADR
