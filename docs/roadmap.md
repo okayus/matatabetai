@@ -19,7 +19,7 @@
 - [ ] meals / tags / meal_tags / またたべたい（[requirements.md](requirements.md) の設計メモ。実スキーマ投入前に `cloudflare-d1-drizzle-migration` 必読）
 - [ ] 写真 — skill `cloudflare-r2-private-image-upload`（クライアント縮小、private R2 `matatabetai-photos`）
 - [ ] 投稿時サジェスト（直近の料理名、タグで絞り込み、前回内容の引き継ぎ）
-- [ ] e2e 3 spec — `cloudflare-workers-e2e-playwright` / `playwright-e2e-in-docker-sandbox`
+- [x] e2e 3 spec — `cloudflare-workers-e2e-playwright` / `playwright-e2e-in-docker-sandbox`
 
 ## Phase 3 — 振り返れる
 
