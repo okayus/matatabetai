@@ -22,6 +22,13 @@
       "when": 1788227101473,
       "tag": "0002_meals_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788265635929,
+      "tag": "0003_meal_photos",
+      "breakpoints": true
     }
   ]
 }

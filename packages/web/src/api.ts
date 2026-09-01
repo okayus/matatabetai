@@ -43,6 +43,14 @@ export type RecipeSource =
   | { type: "text"; text: string }
   | { type: "none" };
 export type MealTag = { id: string; name: string };
+// width / height は縮小後の本体寸法。<img> の寸法予約（CLS 回避）に使う
+export type MealPhoto = {
+  id: string;
+  width: number;
+  height: number;
+  hasThumb: boolean;
+  createdAt: string;
+};
 export type Meal = {
   id: string;
   name: string;
@@ -52,6 +60,7 @@ export type Meal = {
   note: string | null;
   mataTabetai: boolean;
   tags: MealTag[];
+  photos: MealPhoto[];
   createdBy: string;
   createdByName: string;
   createdAt: string;
@@ -73,6 +82,22 @@ export type ApiFailure =
 // 401 は「セッションが切れた」の合図。どの呼び出しからでも AuthProvider に伝える
 export const UNAUTHORIZED_EVENT = "matatabetai:unauthorized";
 
+async function toResult<T>(res: Response): Promise<Result<T, ApiFailure>> {
+  if (!res.ok) {
+    const j = (await res.json().catch(() => ({}))) as {
+      error?: { type?: string; message?: string };
+    };
+    if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    return err({
+      kind: "http",
+      status: res.status,
+      type: j.error?.type ?? "unknown",
+      message: j.error?.message ?? `HTTP ${res.status}`,
+    });
+  }
+  return ok((await res.json()) as T);
+}
+
 // 同一オリジンの fetch: cookie は自動で付き、非 GET には Origin が付く（サーバーの CSRF 検査）
 export async function api<T>(
   path: string,
@@ -89,19 +114,7 @@ export async function api<T>(
   } catch (e) {
     return err({ kind: "network", message: e instanceof Error ? e.message : String(e) });
   }
-  if (!res.ok) {
-    const j = (await res.json().catch(() => ({}))) as {
-      error?: { type?: string; message?: string };
-    };
-    if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
-    return err({
-      kind: "http",
-      status: res.status,
-      type: j.error?.type ?? "unknown",
-      message: j.error?.message ?? `HTTP ${res.status}`,
-    });
-  }
-  return ok((await res.json()) as T);
+  return toResult(res);
 }
 
 const post = <T>(path: string, body?: unknown) => api<T>(path, { method: "POST", body });
@@ -165,6 +178,42 @@ export const setMataTabetai = (spaceId: string, mealId: string, mataTabetai: boo
 export const deleteMeal = (spaceId: string, mealId: string) =>
   del<Record<string, never>>(`/api/spaces/${spaceId}/meals/${mealId}`);
 
+// --- meal photos --------------------------------------------------------------------------
+// 写真は private R2 を Worker 経由で配る。<img src> は同一オリジンなので cookie が自動で付く
+export const mealPhotoUrl = (
+  spaceId: string,
+  mealId: string,
+  photoId: string,
+  variant?: "thumb",
+) =>
+  `/api/spaces/${spaceId}/meals/${mealId}/photos/${photoId}${variant === "thumb" ? "?variant=thumb" : ""}`;
+
+// FormData は素の fetch で送る（boundary は fetch が付ける。Content-Type を手で書かない）
+export async function uploadMealPhoto(
+  spaceId: string,
+  mealId: string,
+  photo: { full: { blob: Blob; width: number; height: number }; thumb: { blob: Blob } },
+): Promise<Result<MealPhoto, ApiFailure>> {
+  const fd = new FormData();
+  fd.append("file", photo.full.blob, "photo.jpg");
+  fd.append("thumb", photo.thumb.blob, "thumb.jpg");
+  fd.append("width", String(photo.full.width));
+  fd.append("height", String(photo.full.height));
+  let res: Response;
+  try {
+    res = await fetch(`/api/spaces/${spaceId}/meals/${mealId}/photos`, {
+      method: "POST",
+      body: fd,
+    });
+  } catch (e) {
+    return err({ kind: "network", message: e instanceof Error ? e.message : String(e) });
+  }
+  return toResult(res);
+}
+
+export const deleteMealPhoto = (spaceId: string, mealId: string, photoId: string) =>
+  del<Record<string, never>>(`/api/spaces/${spaceId}/meals/${mealId}/photos/${photoId}`);
+
 export const listInvites = (spaceId: string) => api<PendingInvite[]>(`/api/spaces/${spaceId}/invites`);
 export const issueInvite = (spaceId: string) => post<IssuedInvite>(`/api/spaces/${spaceId}/invites`);
 export const revokeInvite = (spaceId: string, inviteId: string) =>
@@ -199,6 +248,10 @@ export function describeFailure(f: ApiFailure): string {
       return "見つかりませんでした。";
     case "challenge_mismatch":
       return "パスキーの確認に失敗しました。もう一度やり直してください。";
+    case "photo_too_large":
+      return "写真が大きすぎます（10 MB まで）。";
+    case "photo_type_not_allowed":
+      return "この形式の写真には対応していません（JPEG / PNG / WebP）。iPhone は 設定 → カメラ → フォーマット → 互換性優先 にすると確実です。";
     case "validation_error":
       return `入力を確認してください（${f.message}）`;
     case "unauthorized":

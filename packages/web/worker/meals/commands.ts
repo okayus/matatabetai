@@ -10,6 +10,7 @@ import {
 } from "../domain/meal";
 import type { UserId } from "../domain/auth";
 import type { SpaceId } from "../domain/space";
+import { photoKeysOfMeal } from "./photos";
 import type { MealTagSummary } from "./queries";
 
 // タグの upsert → meal → meal_tags を 1 つの batch（原子的）で書く。tag id の解決は
@@ -94,12 +95,17 @@ export async function setMataTabetai(
   return updated.length > 0;
 }
 
-// meal_tags は CASCADE で消える。tags はサジェストのために残す
+// meal_tags / meal_photos の行は CASCADE で消える。tags はサジェストのために残す。
+// R2 object は CASCADE では消えないので、先に key を集めて配列 1 回で消す（R2 が先:
+// 逆順だと一時的な R2 障害が消せない orphan object になる。skill cloudflare-r2-private-image-upload）
 export async function deleteMeal(
   d1: D1Database,
+  bucket: R2Bucket,
   spaceId: SpaceId,
   mealId: MealId,
 ): Promise<boolean> {
+  const keys = await photoKeysOfMeal(drizzle(d1), spaceId, mealId);
+  if (keys.length > 0) await bucket.delete(keys);
   const deleted = await drizzle(d1)
     .delete(meals)
     .where(and(eq(meals.id, mealId), eq(meals.spaceId, spaceId)))

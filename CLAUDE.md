@@ -206,7 +206,7 @@ pnpm test                    # ユニットテスト（vitest。純粋関数だ�
 pnpm e2e                     # Playwright 3 spec（ビルド成果物を wrangler dev で配信。ローカル D1 を全消し。CI では回さない）
 pnpm run ci                  # CI と同じ検査（-r で check + test + build。ci.yml はこれを呼ぶだけ）
 pnpm types                   # wrangler.jsonc から worker-configuration.d.ts を生成（gitignore。clone 直後に 1 回）
-pnpm db:generate -- --name <summary>   # schema.ts から drizzle/NNNN_<summary>.sql を生成（rebuild が出たら skill cloudflare-d1-drizzle-migration）
+pnpm db:generate --name <summary>   # schema.ts から drizzle/NNNN_<summary>.sql を生成（`--` を挟むと drizzle-kit が「Unrecognized options」で落ちる。rebuild が出たら skill cloudflare-d1-drizzle-migration）
 pnpm db:migrate              # D1 migration をローカルに適用
 pnpm db:migrate:prod         # 本番 D1 に適用。通常は deploy パイプラインが行う。人手なら packages/web で ./node_modules/.bin/wrangler d1 migrations apply matatabetai --remote（ホストで pnpm 経由は不可）
 ```

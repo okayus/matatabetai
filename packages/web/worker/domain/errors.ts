@@ -19,7 +19,11 @@ export type AppError =
   | { type: "invite_invalid" }
   | { type: "invite_consumed" }
   | { type: "invite_expired" }
-  | { type: "invite_race" };
+  | { type: "invite_race" }
+  | { type: "photo_too_large"; maxBytes: number }
+  // message には sniff 結果（image/heic 等）が入る。UI はこれで HEIC 向けの案内を出し分けない
+  // （形式は問わず同じ文言）が、ログ・デバッグの手がかりに残す
+  | { type: "photo_type_not_allowed"; message?: string };
 
 const STATUS: Record<AppError["type"], ContentfulStatusCode> = {
   validation_error: 400,
@@ -37,6 +41,8 @@ const STATUS: Record<AppError["type"], ContentfulStatusCode> = {
   invite_race: 409,
   invite_consumed: 410,
   invite_expired: 410,
+  photo_too_large: 413,
+  photo_type_not_allowed: 415,
 };
 
 export function errorStatus(error: AppError): ContentfulStatusCode {

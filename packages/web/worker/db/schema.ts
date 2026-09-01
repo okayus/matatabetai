@@ -155,6 +155,33 @@ export const meals = sqliteTable(
   ],
 );
 
+// 写真は meals の CASCADE 子。space_id は持たず親経由で属する（認可境界は meals.space_id）。
+// バイト列は R2（private bucket、キーは photos/<spaceId>/<mealId>/<photoId>、拡張子なし）で、
+// content_type はアップロード時に magic bytes で判定した値。width/height はクライアントの
+// canvas 縮小結果なので必ずある（<img> の寸法予約に使う）。
+export const mealPhotos = sqliteTable(
+  "meal_photos",
+  {
+    id: text("id").primaryKey(),
+    mealId: text("meal_id")
+      .notNull()
+      .references(() => meals.id, { onDelete: "cascade" }),
+    r2Key: text("r2_key").notNull(),
+    // 320px サムネ（<r2_key>/w320）。生成できなかった端末からの投稿は null で本体に fallback
+    thumbKey: text("thumb_key"),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    // 表示・監査用。認可軸ではない（meals.created_by と同じ扱い）
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("meal_photos_meal_id_idx").on(t.mealId)],
+);
+
 // 食材タグ。スペース単位で name_normalized が一意（表示名は最初に登録した表記が勝つ）
 export const tags = sqliteTable(
   "tags",

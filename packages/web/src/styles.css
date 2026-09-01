@@ -236,6 +236,59 @@
     background: var(--color-danger-bg);
     color: var(--color-danger);
   }
+  .photo-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .photo-thumb {
+    display: block;
+    inline-size: 5.5rem;
+    aspect-ratio: 1;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: calc(var(--radius) / 2);
+    background: none;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  /* width/height 属性は本体の縦横比。タイルは正方形に切り抜く */
+  .photo-thumb img,
+  .photo-pending img {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+  .photo-pending {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    inline-size: 5.5rem;
+  }
+  .photo-pending img {
+    aspect-ratio: 1;
+    border: 1px solid var(--color-border);
+    border-radius: calc(var(--radius) / 2);
+  }
+  .lightbox {
+    max-inline-size: min(96vw, 60rem);
+    padding: 0;
+    border: none;
+    background: transparent;
+  }
+  .lightbox::backdrop {
+    background: rgb(0 0 0 / 0.8);
+  }
+  .lightbox img {
+    display: block;
+    max-inline-size: 100%;
+    max-block-size: 80dvh;
+    inline-size: auto;
+    block-size: auto;
+    margin-inline: auto;
+    border-radius: var(--radius);
+  }
 }
 
 @layer utilities {

@@ -28,6 +28,7 @@ export const mealRoutes = new Hono<SpaceEnv>()
       note: parsed.value.note,
       mataTabetai: false,
       tags: created.tags,
+      photos: [],
       createdBy: c.var.userId,
       createdByName: c.var.displayName,
       createdAt: now,
@@ -49,6 +50,8 @@ export const mealRoutes = new Hono<SpaceEnv>()
   .delete("/:mealId", async (c) => {
     const id = parseWith(MealId, c.req.param("mealId"));
     if (id.isErr()) return fail(c, { type: "not_found" });
-    if (!(await deleteMeal(c.env.DB, c.var.spaceId, id.value))) return fail(c, { type: "not_found" });
+    if (!(await deleteMeal(c.env.DB, c.env.PHOTOS_BUCKET, c.var.spaceId, id.value))) {
+      return fail(c, { type: "not_found" });
+    }
     return c.json({});
   });
