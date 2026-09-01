@@ -15,6 +15,13 @@
       "when": 1788078572487,
       "tag": "0001_auth_spaces",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788227101473,
+      "tag": "0002_meals_tags",
+      "breakpoints": true
     }
   ]
 }

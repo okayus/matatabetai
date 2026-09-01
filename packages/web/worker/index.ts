@@ -8,6 +8,7 @@ import { sessionMiddleware } from "./middleware/session";
 import { spaceMiddleware } from "./middleware/space";
 import { authRoutes } from "./routes/auth";
 import { inviteAcceptRoutes } from "./routes/invite-accept";
+import { mealRoutes } from "./routes/meals";
 import { spaceDetailRoutes } from "./routes/space-detail";
 import { spaceInviteRoutes } from "./routes/space-invites";
 import { mySpacesRoutes } from "./routes/spaces";
@@ -41,6 +42,7 @@ const space = new Hono<SpaceEnv>();
 space.use("*", spaceMiddleware); // 以下は所属が要る
 space.route("/", spaceDetailRoutes);
 space.route("/invites", spaceInviteRoutes);
+space.route("/meals", mealRoutes);
 protectedApi.route("/spaces/:spaceId", space);
 
 // 未知の /api/* に SPA の index.html を返さない

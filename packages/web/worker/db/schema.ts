@@ -116,5 +116,76 @@ export const invites = sqliteTable(
   ],
 );
 
+// meals は meal_tags（CASCADE 子）の親。後から meals を作り直す migration は D1 の CASCADE 事故
+// （skill cloudflare-d1-drizzle-migration）になるので、列と CHECK は最初に決め切る。
+// meal_type に CHECK を付けないのは意図: 値の追加が table rebuild になるのを避け、enum は zod 境界で守る。
+export const meals = sqliteTable(
+  "meals",
+  {
+    id: text("id").primaryKey(),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    // 表示は入力そのまま、集計・サジェストは name_normalized（NFKC + trim + 小文字）
+    name: text("name").notNull(),
+    nameNormalized: text("name_normalized").notNull(),
+    // JST の日付文字列 YYYY-MM-DD。時刻は持たない
+    eatenOn: text("eaten_on").notNull(),
+    mealType: text("meal_type", { enum: ["breakfast", "lunch", "dinner", "snack"] }),
+    // RecipeSource Discriminated Union の平坦化。url は「レシピ」「店」「商品」を区別しない 1 本
+    recipeSourceType: text("recipe_source_type", { enum: ["url", "text", "none"] }).notNull(),
+    url: text("url"),
+    recipeText: text("recipe_text"),
+    note: text("note"),
+    mataTabetai: integer("mata_tabetai", { mode: "boolean" }).notNull(),
+    // 表示・監査用。認可軸ではない（境界は space_id）。user 削除で投稿を消さないので cascade にしない
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [
+    // 一覧は WHERE space_id = ? ORDER BY eaten_on DESC
+    index("meals_space_id_eaten_on_idx").on(t.spaceId, t.eatenOn),
+    check(
+      "meals_recipe_source_check",
+      sql`(${t.recipeSourceType} = 'url' AND ${t.url} IS NOT NULL AND ${t.recipeText} IS NULL) OR (${t.recipeSourceType} = 'text' AND ${t.recipeText} IS NOT NULL AND ${t.url} IS NULL) OR (${t.recipeSourceType} = 'none' AND ${t.url} IS NULL AND ${t.recipeText} IS NULL)`,
+    ),
+  ],
+);
+
+// 食材タグ。スペース単位で name_normalized が一意（表示名は最初に登録した表記が勝つ）
+export const tags = sqliteTable(
+  "tags",
+  {
+    id: text("id").primaryKey(),
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    nameNormalized: text("name_normalized").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("tags_space_id_name_normalized_uniq").on(t.spaceId, t.nameNormalized)],
+);
+
+export const mealTags = sqliteTable(
+  "meal_tags",
+  {
+    mealId: text("meal_id")
+      .notNull()
+      .references(() => meals.id, { onDelete: "cascade" }),
+    tagId: text("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.mealId, t.tagId] }),
+    // タグ検索（AND）は tag_id から meal を引く
+    index("meal_tags_tag_id_idx").on(t.tagId),
+  ],
+);
+
 export type NewUser = typeof users.$inferInsert;
 export type NewCredential = typeof credentials.$inferInsert;
