@@ -2,6 +2,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/d1";
 import { mealTags, meals, tags, users } from "../db/schema";
 import { recipeSourceFromColumns, type MealType, type RecipeSource } from "../domain/meal";
+import { photosByMealIds, type MealPhotoSummary } from "./photos";
 
 type Db = ReturnType<typeof drizzle>;
 
@@ -16,6 +17,7 @@ export type MealSummary = {
   note: string | null;
   mataTabetai: boolean;
   tags: MealTagSummary[];
+  photos: MealPhotoSummary[];
   createdBy: string;
   createdByName: string;
   createdAt: string;
@@ -48,14 +50,16 @@ export async function listMeals(db: Db, spaceId: string): Promise<MealSummary[]>
     .orderBy(desc(meals.eatenOn), desc(meals.createdAt))
     .limit(MEAL_LIST_LIMIT);
 
-  const tagsByMeal = await loadMealTags(
-    db,
-    rows.map((r) => r.id),
-  );
+  const ids = rows.map((r) => r.id);
+  const [tagsByMeal, photosByMeal] = await Promise.all([
+    loadMealTags(db, ids),
+    photosByMealIds(db, ids),
+  ]);
   return rows.map(({ recipeSourceType, url, recipeText, ...rest }) => ({
     ...rest,
     recipeSource: recipeSourceFromColumns(recipeSourceType, url, recipeText),
     tags: tagsByMeal.get(rest.id) ?? [],
+    photos: photosByMeal.get(rest.id) ?? [],
   }));
 }
 

@@ -26,5 +26,14 @@
       "database_id": "58a6232f-2847-4f9b-936f-725704d1fb61",
       "migrations_dir": "drizzle"
     }
+  ],
+  "r2_buckets": [
+    {
+      // private bucket。公開アクセス・r2.dev は付けず、配信は Worker proxy のみ
+      // （skill cloudflare-r2-private-image-upload）。ローカル/e2e は Miniflare が模擬する。
+      // deploy には bucket の実在と deploy token の Workers R2 Storage: Edit が要る（host-setup 5）
+      "binding": "PHOTOS_BUCKET",
+      "bucket_name": "matatabetai-photos"
+    }
   ]
 }
