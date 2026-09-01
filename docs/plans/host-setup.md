@@ -1,10 +1,10 @@
 # 計画: 人手でホストから済ませること（完了したら削除）
 
-credential を扱う作業を人間がホストで行う。**ホストの wrangler は `packages/web` で `./node_modules/.bin/wrangler`**（コンテナが lockfile どおりに入れたものが bind mount で見える。グローバルに入れない。`pnpm exec` は pnpm 11 が install を自動実行してコンテナの `node_modules` を消そうとするので使わない — [local-dev.md](../local-dev.md)）。順は 初回 owner 登録（ドメイン判断のあと）→ Workers Builds → R2。済んだ節は削除して `docs/log.md` に 1 行、全部済んだらこのファイルごと削除（番号は参照が壊れないよう詰めない）。
+credential を扱う作業を人間がホストで行う。**ホストの wrangler は `packages/web` で `./node_modules/.bin/wrangler`**（コンテナが lockfile どおりに入れたものが bind mount で見える。グローバルに入れない。`pnpm exec` は pnpm 11 が install を自動実行してコンテナの `node_modules` を消そうとするので使わない — [local-dev.md](../local-dev.md)）。順は 初回 owner 登録 → Workers Builds → R2。済んだ節は削除して `docs/log.md` に 1 行、全部済んだらこのファイルごと削除（番号は参照が壊れないよう詰めない）。
 
 ## 6. 初回 owner 登録（ADR-002。`SESSION_SECRET` は 2026-08-30 に投入済み）
 
-roadmap 決めること 4（ドメイン）を確定してから。passkey を 1 つでも登録した後のホスト変更は破壊的（ADR-001 §2）。ホスト、`packages/web` で:
+ドメインは workers.dev で確定済み（roadmap 決めること 4、2026-09-01）なのですぐ実行できる。ホスト、`packages/web` で:
 
 ```bash
 openssl rand -hex 32 | ./node_modules/.bin/wrangler secret put INITIAL_REGISTRATION_TOKEN
