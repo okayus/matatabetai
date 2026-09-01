@@ -3,6 +3,7 @@
 1 行 = 1 節目（PR の merge・ADR・人手作業の完了・本番の状態変化）。`- YYYY-MM-DD 何を（#PR / ADR / skill）`。
 自動ロードはされない。必要なら `head -20 docs/log.md`。作業中の試行錯誤は書かない（git log と PR にある）。
 
+- 2026-09-01 初回 owner 登録が完了（人手、host-setup 6 を削除）— owner のパスキー + 2 台目の計 2 台。残る人手作業は Workers Builds 接続と R2 bucket
 - 2026-08-31 okayus-skills への還元（passkey-auth 0.2.0 / space-membership-invite 0.2.0 / e2e-playwright 0.2.1 / docker-sandbox 0.6.1）をホストで commit（人手）。#20 で host-setup 6 を初回 owner 登録だけに、ホストの wrangler は `packages/web/node_modules/.bin/wrangler` に統一
 - 2026-08-30 #19 を merge — passkey 認証・スペース・招待リンク（migration 0001 が本番 D1 に適用、ADR-002）。ホストで `SESSION_SECRET` を投入し `/api/auth/login/begin` が 200。本番は登録の扉が閉じた状態（`registration_closed`）で稼働。skill 還元: passkey-auth 0.2.0 / space-membership-invite 0.2.0 / e2e-playwright 0.2.1 / docker-sandbox 0.6.1。ホストの `pnpm exec wrangler` は pnpm 11 の自動 install がコンテナの node_modules を消そうとして失敗 → `packages/web/node_modules/.bin/wrangler` を直接叩く運用に
 - 2026-08-30 fine-grained PAT で `gh pr merge --auto --squash` の arm（GraphQL mutation）が通ることをコンテナから実証（#16 は CI 先行で即時経路、#17 で `enabledAt` → `ci` 待ち → merge）。okayus-skills token skill の Still open を閉じ 0.2.6 へ。同じ運用（opt-in merge + 安定シェル CI）を kokemusu / mazuoboeru にも展開し、既存リポの上げ方チェックリストを skill 0.2.5 に追加

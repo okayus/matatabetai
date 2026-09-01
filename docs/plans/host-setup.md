@@ -1,22 +1,6 @@
 # 計画: 人手でホストから済ませること（完了したら削除）
 
-credential を扱う作業を人間がホストで行う。**ホストの wrangler は `packages/web` で `./node_modules/.bin/wrangler`**（コンテナが lockfile どおりに入れたものが bind mount で見える。グローバルに入れない。`pnpm exec` は pnpm 11 が install を自動実行してコンテナの `node_modules` を消そうとするので使わない — [local-dev.md](../local-dev.md)）。順は 初回 owner 登録 → Workers Builds → R2。済んだ節は削除して `docs/log.md` に 1 行、全部済んだらこのファイルごと削除（番号は参照が壊れないよう詰めない）。
-
-## 6. 初回 owner 登録（ADR-002。`SESSION_SECRET` は 2026-08-30 に投入済み）
-
-ドメインは workers.dev で確定済み（roadmap 決めること 4、2026-09-01）なのですぐ実行できる。ホスト、`packages/web` で:
-
-```bash
-# トークンは /register に自分で打つので、secret へ流す前に表示する（delete までの短命なので画面に出してよい）
-TOKEN=$(openssl rand -hex 32) && echo "$TOKEN"
-printf %s "$TOKEN" | ./node_modules/.bin/wrangler secret put INITIAL_REGISTRATION_TOKEN
-# → スマホで https://matatabetai.shiraoka.workers.dev/register を開き、表示名 + トークン（コピペで渡す）→ パスキー作成
-./node_modules/.bin/wrangler secret delete INITIAL_REGISTRATION_TOKEN     # 登録できたらすぐ閉じる
-./node_modules/.bin/wrangler secret list                                  # SESSION_SECRET だけに戻る
-./node_modules/.bin/wrangler d1 execute matatabetai --remote --command "SELECT u.display_name, s.name, sm.role FROM space_members sm JOIN users u ON u.id = sm.user_id JOIN spaces s ON s.id = sm.space_id"
-```
-
-そのあと アカウント画面で 2 台目のパスキーを追加 → スペース設定の「招待リンクを作る」で家族を招待（7 日・1 回）。
+credential を扱う作業を人間がホストで行う。**ホストの wrangler は `packages/web` で `./node_modules/.bin/wrangler`**（コンテナが lockfile どおりに入れたものが bind mount で見える。グローバルに入れない。`pnpm exec` は pnpm 11 が install を自動実行してコンテナの `node_modules` を消そうとするので使わない — [local-dev.md](../local-dev.md)）。順は Workers Builds → R2。済んだ節は削除して `docs/log.md` に 1 行、全部済んだらこのファイルごと削除（番号は参照が壊れないよう詰めない）。
 
 ## 4. Workers Builds 接続（skill `cloudflare-workers-builds-keyless-deploy` 0.3.0、`references/dashboard-walkthrough.md`）
 
