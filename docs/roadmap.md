@@ -17,7 +17,7 @@
 ## Phase 2 — 記録できる（MVP）
 
 - [x] meals / tags / meal_tags / またたべたい（[requirements.md](requirements.md) の設計メモ、[ADR-003](adr/003-meals-tags.md)）
-- [ ] 写真 — skill `cloudflare-r2-private-image-upload`（クライアント縮小、private R2 `matatabetai-photos`）
+- [x] 写真 — skill `cloudflare-r2-private-image-upload`（クライアント縮小、private R2 `matatabetai-photos`）
 - [ ] 投稿時サジェスト（直近の料理名、タグで絞り込み、前回内容の引き継ぎ）
 - [x] e2e 3 spec — `cloudflare-workers-e2e-playwright` / `playwright-e2e-in-docker-sandbox`
 
@@ -31,7 +31,7 @@
 
 - [ ] bot scan 対策・認証 route のレート制限 — `cloudflare-workers-bot-scan-defense`
 - [ ] D1 バックアップ — `cloudflare-d1-weekly-backup-via-pr`（public なら git commit 変種は不可 → keyless 変種）
-- [ ] 写真のバックアップ方針を ADR に（R2 に PITR なし）
+- [x] 写真のバックアップ方針を ADR に（R2 に PITR なし）
 - [ ] 日本語部分一致の FTS5 化（D1 の trigram tokenizer は要確認）、スペース切替 UI
 
 ---
@@ -43,4 +43,4 @@
 3. ~~リポの可視性~~ → ✅ public（2026-08-23）+ `protect-main` / `no-force-push-anywhere` ruleset + auto-merge opt-in（ADR-001 改訂 2026-08-24。ruleset 作成は plans/host-setup.md 1）
 4. ~~ドメイン~~ → ✅ workers.dev のまま（2026-09-01。`matatabetai.shiraoka.workers.dev` に RP_ID/ORIGIN 固定済みで作業なし。後から custom domain へ移るなら credential 移行戦略ごと再検討 — CLAUDE.md「RP_ID / ORIGIN」）
 5. ~~デプロイ経路~~ → ✅ Workers Builds（キーレス）へ移行（ADR-001 §1。儀式は plans/host-setup.md）
-6. **写真のバックアップ**: 既定案「端末に原本が残るので受容」。写真実装時に ADR
+6. ~~写真のバックアップ~~ → ✅ 受容（アプリが持つのは縮小コピーで原本はスマホに残る。[ADR-004](adr/004-meal-photos-r2.md) §7、2026-09-01）

@@ -3,6 +3,8 @@
 1 行 = 1 節目（PR の merge・ADR・人手作業の完了・本番の状態変化）。`- YYYY-MM-DD 何を（#PR / ADR / skill）`。
 自動ロードはされない。必要なら `head -20 docs/log.md`。作業中の試行錯誤は書かない（git log と PR にある）。
 
+- 2026-09-01 #27 を merge — 写真アップロード（meal_photos の migration 0003 が本番 D1 に適用、private R2 `matatabetai-photos` + Worker proxy 配信・クライアント縮小 1600px/320px・`<dialog>` lightbox、ADR-004）。e2e は golden path に upload → 配信 → 304 → 削除、boundary に写真ルートの横流れ 404 を追加。スマホからの写真付き投稿を実機確認し、Phase 2 の写真が本番稼働。skill `cloudflare-r2-private-image-upload` へ 0.2.0 を還元（okayus-skills はホストで commit 済み）
+- 2026-09-01 R2 bucket `matatabetai-photos` の作成と `CLOUDFLARE_API_TOKEN` への R2 Edit 追加が完了（人手、host-setup 5 を削除）。残る人手作業は Workers Builds 接続のみ
 - 2026-09-01 初回 owner 登録が完了（人手、host-setup 6 を削除）— owner のパスキー + 2 台目の計 2 台。残る人手作業は Workers Builds 接続と R2 bucket
 - 2026-09-01 #22 を merge — Phase 2 記録機能の第一弾（meals / tags / meal_tags / またたべたい、migration 0002 が本番 D1 に適用、ADR-003）。投稿・一覧 UI、e2e は golden path に投稿・boundary に meal id 横流れ 404 を追加。タグ upsert → meal → meal_tags は 1 つの d1.batch
 - 2026-09-01 ドメインは workers.dev のままで確定（決めること 4、#23）— RP_ID/ORIGIN 固定済みで作業なし。初回 owner 登録のゲートが外れた
