@@ -3,9 +3,10 @@ import { E2E_INITIAL_REGISTRATION_TOKEN } from "../playwright.config";
 import { enableVirtualAuthenticator } from "./helpers/webauthn";
 
 // 配線の事実: 初回登録（パスキー作成 → users/spaces/space_members/credentials/sessions）→
-// リロードでセッションが残る → 招待リンク発行 → 別ブラウザが招待から登録 → メンバーに並ぶ →
-// ログアウト → パスキーでログインし直す。ドメインの意味はユニットに譲る。
-test("register → reload → invite → second member → logout → login", async ({ page, browser, baseURL }) => {
+// リロードでセッションが残る → 投稿作成（meals/tags/meal_tags）→ またたべたいトグル →
+// リロードで投稿とトグルが残る → 削除 → 招待リンク発行 → 別ブラウザが招待から登録 →
+// メンバーに並ぶ → ログアウト → パスキーでログインし直す。ドメインの意味はユニットに譲る。
+test("register → reload → meal record → invite → second member → logout → login", async ({ page, browser, baseURL }) => {
   await enableVirtualAuthenticator(page);
 
   await page.goto("/register");
@@ -20,6 +21,32 @@ test("register → reload → invite → second member → logout → login", as
   // 永続化の事実: リロード後もログイン状態と表示名が残る
   await page.reload();
   await expect(page.getByRole("heading", { name: /こんにちは、e2e-owner さん/ })).toBeVisible();
+
+  // 投稿作成（meals / tags / meal_tags が繋がっている）
+  await page.getByLabel("料理名").fill("肉じゃが");
+  await page.getByLabel("タグ").fill("じゃがいも 牛肉");
+  await page.getByRole("button", { name: "記録する" }).click();
+  await expect(page.getByText("肉じゃが", { exact: true })).toBeVisible();
+  await expect(page.getByText("じゃがいも", { exact: true })).toBeVisible();
+  await expect(page.getByText("牛肉", { exact: true })).toBeVisible();
+
+  // またたべたいトグル → リロードで投稿もトグルも残る（永続化はユニットでは検知不能）
+  const mataButton = page.getByRole("button", { name: /またたべたい/ });
+  await expect(mataButton).toHaveAttribute("aria-pressed", "false");
+  await mataButton.click();
+  await expect(mataButton).toHaveAttribute("aria-pressed", "true");
+  await page.reload();
+  await expect(page.getByText("肉じゃが", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /またたべたい/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  // 削除（confirm を受ける）
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: /削除/ }).click();
+  await expect(page.getByText("肉じゃが", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("まだ記録がありません", { exact: false })).toBeVisible();
 
   // 招待リンクを発行
   await page.getByRole("link", { name: "設定" }).click();

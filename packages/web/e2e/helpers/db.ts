@@ -14,6 +14,9 @@ export function executeLocalSql(sql: string): void {
 export function resetLocalDb(): void {
   executeLocalSql(
     [
+      "DELETE FROM meal_tags",
+      "DELETE FROM meals",
+      "DELETE FROM tags",
       "DELETE FROM invites",
       "DELETE FROM sessions",
       "DELETE FROM credentials",

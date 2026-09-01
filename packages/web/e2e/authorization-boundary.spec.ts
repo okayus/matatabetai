@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { E2E_INITIAL_REGISTRATION_TOKEN } from "../playwright.config";
-import { OTHER_SPACE_ID } from "./global-setup";
+import { OTHER_MEAL_ID, OTHER_SPACE_ID } from "./global-setup";
 import { enableVirtualAuthenticator } from "./helpers/webauthn";
 
 // 認可の横流れ: 他スペースは API で 404（本文まで固定）、UI はアクセス拒否の一文。403 は存在を漏らす。
@@ -21,6 +21,10 @@ test("a member of space A gets 404 for space B (API and UI)", async ({ page, bas
   expect(members.status()).toBe(404);
   expect(await members.json()).toEqual({ error: { type: "not_found" } });
 
+  const otherMeals = await page.request.get(`/api/spaces/${OTHER_SPACE_ID}/meals`);
+  expect(otherMeals.status()).toBe(404);
+  expect(await otherMeals.json()).toEqual({ error: { type: "not_found" } });
+
   // 書き込みも 404（403 でも 500 でもない）。非 GET なので Origin を付ける
   const write = await page.request.post(`/api/spaces/${OTHER_SPACE_ID}/invites`, { headers: origin });
   expect(write.status()).toBe(404);
@@ -30,6 +34,14 @@ test("a member of space A gets 404 for space B (API and UI)", async ({ page, bas
   const me = await page.request.get("/api/auth/me");
   const mine = ((await me.json()) as { spaces: { id: string }[] }).spaces[0]?.id ?? "";
   expect((await page.request.get(`/api/spaces/${mine}`)).status()).toBe(200);
+
+  // 自分のスペースの URL に他スペースの meal id を当てても 404（meal は space_id ごと引く）
+  const crossPatch = await page.request.patch(`/api/spaces/${mine}/meals/${OTHER_MEAL_ID}`, {
+    headers: origin,
+    data: { mataTabetai: true },
+  });
+  expect(crossPatch.status()).toBe(404);
+  expect(await crossPatch.json()).toEqual({ error: { type: "not_found" } });
 
   await page.goto(`/spaces/${OTHER_SPACE_ID}/settings`);
   await expect(page.getByText("アクセス権がありません")).toBeVisible();
