@@ -2,19 +2,15 @@
 
 credential を扱う作業を人間がホストで行う。**ホストの wrangler は `packages/web` で `./node_modules/.bin/wrangler`**（コンテナが lockfile どおりに入れたものが bind mount で見える。グローバルに入れない。`pnpm exec` は pnpm 11 が install を自動実行してコンテナの `node_modules` を消そうとするので使わない — [local-dev.md](../local-dev.md)）。済んだ節は削除して `docs/log.md` に 1 行、全部済んだらこのファイルごと削除（番号は参照が壊れないよう詰めない）。残るは 4 のみ。
 
-## 4. Workers Builds 接続（skill `cloudflare-workers-builds-keyless-deploy` 0.3.0、`references/dashboard-walkthrough.md`）
+## 4. Workers Builds の後始末（dash の接続は 2026-09-02 完了）
 
-**Pre-flight（ターミナル）**:
+**接続済みの内容**（Worker `matatabetai` → 設定 → ビルド）: リポジトリ `okayus/matatabetai` / 本番ブランチ `main` / プレビュービルド **OFF** / ビルド `pnpm install --frozen-lockfile && pnpm run build` / デプロイ `pnpm exec wrangler d1 migrations apply matatabetai --remote && pnpm exec wrangler deploy` / ルートディレクトリ `packages/web` / トークン `matatabetai Workers Builds`（dash 生成、D1 Storage と R2 Storage の Edit を含む）/ 監視パス除外 `docs/*` `*.md`。
 
-```bash
-git fetch origin && git ls-tree --name-only origin/main packages/web/wrangler.jsonc   # パスが出ること
-gh pr list --state open                                                              # 未 merge の骨格 PR が無いこと
-W=packages/web/node_modules/.bin/wrangler
-grep -n '"name"\|database_id' packages/web/wrangler.jsonc; $W d1 list              # name = matatabetai、database_id = 実在の UUID
-$W whoami                                                                            # dash にログインするのと同じアカウント
-$W deployments list                                                                  # 既存 Worker `matatabetai`（GH Actions deploy 済み）が出る = Workers Builds が引き継ぐ
-```
+**残り**:
 
-**dash（値）**: Project name = `matatabetai` / Build command = `pnpm install --frozen-lockfile && pnpm run build` / Deploy command = `pnpm exec wrangler d1 migrations apply matatabetai --remote && pnpm exec wrangler deploy` / **非本番ブランチのビルド = OFF** / 詳細設定 → パス（Root directory）= `packages/web` / API トークン = **「新しいトークンを作成する」**で `matatabetai Workers Builds`（picker 既定の他プロジェクトのトークンを選ばない。My Profile で先に作らない）→ デプロイ。初回は手動ビルドで GitHub に check-run が付かない（missed trigger ではない）。Settings → Builds → Build watch paths の除外に `docs/*` と `*.md`。
+1. `deploy.yml` 削除 PR を merge し、`main` への push で `Workers Builds: matatabetai` の check-run が付くこと（= push 起動）を確認する。この経路は初回が手動ビルドではないので、最初の push がそのまま実証になる
+2. deploy と本番 `/health` が通ったら secrets を退役: `gh secret delete CLOUDFLARE_API_TOKEN` と `gh secret delete CLOUDFLARE_ACCOUNT_ID`
+3. My Profile → API トークンで、旧 `CLOUDFLARE_API_TOKEN` に使っていたトークンを削除する（`matatabetai Workers Builds` は残す）
+4. `docs/roadmap.md` Phase 1 の「Workers Builds へ移行し `deploy.yml` と GitHub secrets を撤去」にチェック → このファイルを削除
 
-**接続後（ホストから push）**: `.github/workflows/deploy.yml` を削除する PR（workflow ファイルは token で push できない）→ merge で push 起動ビルドを実証（`Workers Builds: matatabetai` の check-run）→ `gh secret delete CLOUDFLARE_API_TOKEN` と `gh secret delete CLOUDFLARE_ACCOUNT_ID` → My Profile の旧 `CLOUDFLARE_API_TOKEN` 用トークンを削除 → `docs/roadmap.md` Phase 1 の該当項目にチェック。dash 生成トークンは D1 / R2 edit を含む（2026-08-23 時点）。
+**skill との差分**（`cloudflare-workers-builds-keyless-deploy` へ還元済み）: 既存 Worker があると「アプリケーションを作成する」経路は `この名前のプロジェクトはすでに存在します` で弾かれる。正しい入口は Worker → 設定 → ビルド → Git リポジトリ → 接続。
