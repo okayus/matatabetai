@@ -1,15 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   createMeal,
   createSpace,
-  deleteMeal,
-  deleteMealPhoto,
   describeFailure,
   listMeals,
   listMealSuggestions,
   listSpaceTags,
   mealPhotoUrl,
-  setMataTabetai,
   uploadMealPhoto,
   type Me,
   type Meal,
@@ -20,6 +17,8 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { Link } from "../components/Link";
+import { MealList } from "../components/MealList";
+import { TagFilter } from "../components/TagFilter";
 import { formatEatenOn, formatShortDate, todayLocalDate } from "../format";
 import { preparePhoto, type PreparedPhoto } from "../lib/image-prep";
 import {
@@ -31,11 +30,11 @@ import {
   MEAL_TYPE_LABEL,
   type MealFormState,
 } from "../lib/meal-form";
+import { primarySpace } from "../lib/space";
 
 export function HomePage({ me }: { me: Me }) {
   const ownsSpace = me.spaces.some((s) => s.role === "owner");
-  // スペース切替 UI は当面持たない（requirements.md backlog）。自分のスペース優先で 1 つに決める
-  const primary = me.spaces.find((s) => s.role === "owner") ?? me.spaces[0];
+  const primary = primarySpace(me.spaces);
   return (
     <section className="stack">
       <h1>こんにちは、{me.displayName} さん</h1>
@@ -53,7 +52,6 @@ export function HomePage({ me }: { me: Me }) {
 function MealsSection({ space }: { space: SpaceSummary }) {
   const [meals, setMeals] = useState<Meal[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [lightbox, setLightbox] = useState<{ meal: Meal; photo: MealPhoto } | null>(null);
   // 記録が変わればサジェストも変わる（消した料理の札や、消えた写真を出したままにしない）
   const [mealsVersion, setMealsVersion] = useState(0);
   const bumpVersion = () => setMealsVersion((n) => n + 1);
@@ -76,48 +74,6 @@ function MealsSection({ space }: { space: SpaceSummary }) {
     );
     bumpVersion();
   };
-  const toggle = async (m: Meal) => {
-    setError(null);
-    const r = await setMataTabetai(space.id, m.id, !m.mataTabetai);
-    if (r.isErr()) {
-      setError(describeFailure(r.error));
-      return;
-    }
-    setMeals((prev) =>
-      (prev ?? []).map((x) =>
-        x.id === m.id ? { ...x, mataTabetai: r.value.mataTabetai, updatedAt: r.value.updatedAt } : x,
-      ),
-    );
-  };
-  const remove = async (m: Meal) => {
-    if (!confirm(`「${m.name}」を削除しますか？`)) return;
-    setError(null);
-    const r = await deleteMeal(space.id, m.id);
-    if (r.isErr()) {
-      setError(describeFailure(r.error));
-      return;
-    }
-    setMeals((prev) => (prev ?? []).filter((x) => x.id !== m.id));
-    bumpVersion();
-  };
-  const removePhoto = async (sel: { meal: Meal; photo: MealPhoto }) => {
-    if (!confirm("この写真を削除しますか？")) return;
-    setError(null);
-    const r = await deleteMealPhoto(space.id, sel.meal.id, sel.photo.id);
-    if (r.isErr()) {
-      setError(describeFailure(r.error));
-      return;
-    }
-    setMeals((prev) =>
-      (prev ?? []).map((x) =>
-        x.id === sel.meal.id
-          ? { ...x, photos: x.photos.filter((p) => p.id !== sel.photo.id) }
-          : x,
-      ),
-    );
-    setLightbox(null);
-    bumpVersion();
-  };
 
   return (
     <>
@@ -134,100 +90,17 @@ function MealsSection({ space }: { space: SpaceSummary }) {
         ) : meals.length === 0 ? (
           <p className="muted">まだ記録がありません。最初のたべたものを記録してみましょう。</p>
         ) : (
-          groupByEatenOn(meals).map(([date, items]) => (
-            <div key={date} className="stack stack--tight">
-              <h3 className="muted">{formatEatenOn(date)}</h3>
-              {/* list-style を消した ul は Safari が list 扱いしなくなるので role を戻す */}
-              <ul className="list" role="list">
-                {items.map((m) => (
-                  <MealItem
-                    key={m.id}
-                    spaceId={space.id}
-                    meal={m}
-                    onToggle={toggle}
-                    onRemove={remove}
-                    onOpenPhoto={(meal, photo) => setLightbox({ meal, photo })}
-                  />
-                ))}
-              </ul>
-            </div>
-          ))
+          <MealList
+            spaceId={space.id}
+            meals={meals}
+            onMealsChange={(update) => setMeals((prev) => update(prev ?? []))}
+            onRecordsChanged={bumpVersion}
+            onError={setError}
+          />
         )}
       </section>
-      <PhotoLightbox
-        spaceId={space.id}
-        selected={lightbox}
-        onClose={() => setLightbox(null)}
-        onDelete={removePhoto}
-      />
     </>
   );
-}
-
-// 拡大表示。<dialog> の showModal で開く（Esc は native、背景タップは e.target === dialog で判定）
-function PhotoLightbox({
-  spaceId,
-  selected,
-  onClose,
-  onDelete,
-}: {
-  spaceId: string;
-  selected: { meal: Meal; photo: MealPhoto } | null;
-  onClose: () => void;
-  onDelete: (sel: { meal: Meal; photo: MealPhoto }) => void;
-}) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (selected && !dialog.open) dialog.showModal();
-    if (!selected && dialog.open) dialog.close();
-  }, [selected]);
-  return (
-    <dialog
-      ref={ref}
-      className="lightbox"
-      aria-label={selected ? `${selected.meal.name} の写真` : "写真の拡大表示"}
-      onClose={onClose}
-      onClick={(e) => {
-        if (e.target === ref.current) onClose();
-      }}
-    >
-      {selected && (
-        <div className="stack stack--tight">
-          <img
-            src={mealPhotoUrl(spaceId, selected.meal.id, selected.photo.id)}
-            alt={`${selected.meal.name} の写真`}
-            width={selected.photo.width}
-            height={selected.photo.height}
-          />
-          <div className="row row--between">
-            <button
-              type="button"
-              className="btn btn--danger btn--small"
-              onClick={() => onDelete(selected)}
-            >
-              写真を削除
-            </button>
-            <button type="button" className="btn btn--small" onClick={onClose}>
-              閉じる
-            </button>
-          </div>
-        </div>
-      )}
-    </dialog>
-  );
-}
-
-// meals は eaten_on DESC で並んでいるので、連続する同じ日をまとめるだけでよい
-function groupByEatenOn(meals: Meal[]): [string, Meal[]][] {
-  const groups: [string, Meal[]][] = [];
-  for (const m of meals) {
-    const last = groups[groups.length - 1];
-    if (last && last[0] === m.eatenOn) last[1].push(m);
-    else groups.push([m.eatenOn, [m]]);
-  }
-  return groups;
 }
 
 // 選択済みでまだ送っていない写真。preview はサムネ blob の object URL（外したら revoke）
@@ -535,30 +408,7 @@ function SuggestionPicker({
     <div className="field">
       <h3>最近のたべたもの</h3>
       <span className="hint">タップすると前回の URL・レシピ・タグを引き継ぎます</span>
-      {tagList.length > 0 && (
-        <details className="suggest-filter">
-          <summary>
-            タグで絞り込む
-            {selected.length > 0 && <span className="muted">（{selected.join("、")}）</span>}
-          </summary>
-          <fieldset className="chips">
-            <legend className="visually-hidden">
-              絞り込むタグ（選んだタグを全部持つ記録だけが並びます）
-            </legend>
-            {tagList.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className="chip"
-                aria-pressed={selected.includes(t.name)}
-                onClick={() => toggleTag(t.name)}
-              >
-                {t.name}
-              </button>
-            ))}
-          </fieldset>
-        </details>
-      )}
+      <TagFilter tagList={tagList} selected={selected} onToggle={toggleTag} />
       {suggestions.length === 0 ? (
         <p className="hint">このタグの記録はまだありません。</p>
       ) : (
@@ -594,98 +444,6 @@ function SuggestionPicker({
       )}
     </div>
   );
-}
-
-function MealItem({
-  spaceId,
-  meal,
-  onToggle,
-  onRemove,
-  onOpenPhoto,
-}: {
-  spaceId: string;
-  meal: Meal;
-  onToggle: (m: Meal) => void;
-  onRemove: (m: Meal) => void;
-  onOpenPhoto: (meal: Meal, photo: MealPhoto) => void;
-}) {
-  return (
-    <li className="list-item list-item--column">
-      <div className="row">
-        <strong>{meal.name}</strong>
-        {meal.mealType && <span className="badge">{MEAL_TYPE_LABEL[meal.mealType]}</span>}
-      </div>
-      {meal.photos.length > 0 && (
-        <ul className="photo-strip" role="list">
-          {meal.photos.map((p, i) => (
-            <li key={p.id}>
-              <button
-                type="button"
-                className="photo-thumb"
-                onClick={() => onOpenPhoto(meal, p)}
-              >
-                <img
-                  src={mealPhotoUrl(spaceId, meal.id, p.id, p.hasThumb ? "thumb" : undefined)}
-                  alt={`${meal.name} の写真 ${i + 1} を拡大`}
-                  width={p.width}
-                  height={p.height}
-                  loading="lazy"
-                  decoding="async"
-                />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {meal.tags.length > 0 && (
-        <div className="row">
-          {meal.tags.map((t) => (
-            <span key={t.id} className="badge">
-              {t.name}
-            </span>
-          ))}
-        </div>
-      )}
-      {meal.recipeSource.type === "url" && (
-        <a href={meal.recipeSource.url} target="_blank" rel="noreferrer">
-          {linkLabel(meal.recipeSource.url)}
-        </a>
-      )}
-      {meal.recipeSource.type === "text" && (
-        <details>
-          <summary>レシピ</summary>
-          <p className="pre-wrap">{meal.recipeSource.text}</p>
-        </details>
-      )}
-      {meal.note && <p className="muted pre-wrap">{meal.note}</p>}
-      <div className="row row--between">
-        <span className="muted">{meal.createdByName} が記録</span>
-        <div className="row">
-          <button
-            type="button"
-            className="btn btn--small"
-            aria-pressed={meal.mataTabetai}
-            onClick={() => onToggle(meal)}
-          >
-            <span aria-hidden="true">{meal.mataTabetai ? "♥" : "♡"}</span> またたべたい
-            <span className="visually-hidden">（{meal.name}）</span>
-          </button>
-          <button type="button" className="btn btn--danger btn--small" onClick={() => onRemove(meal)}>
-            削除<span className="visually-hidden">（{meal.name}）</span>
-          </button>
-        </div>
-      </div>
-    </li>
-  );
-}
-
-// リンクはドメイン名で示す（URL 全文はモバイルで長すぎる）
-function linkLabel(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return "リンク";
-  }
 }
 
 function SpacesSection({ spaces }: { spaces: SpaceSummary[] }) {
