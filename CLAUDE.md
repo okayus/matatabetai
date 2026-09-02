@@ -61,7 +61,8 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 
 **デプロイ:**
 
-- Workers Builds（キーレス、skill `cloudflare-workers-builds-keyless-deploy` 0.3.0）へ移行する — 接続の儀式は人手（`docs/plans/host-setup.md`）。それまでは GH Actions `deploy.yml`（`CLOUDFLARE_API_TOKEN` secret）で `main` push → D1 migrations → deploy。CI（`.github/workflows/ci.yml`、secrets なし、job `ci`）は deploy と独立で、PR と `main` push で typecheck / build と status hub の上限検査を走らせる
+- **Workers Builds**（キーレス、skill `cloudflare-workers-builds-keyless-deploy`）。`main` への push で Cloudflare 側が `packages/web` を build → D1 migrations → deploy する。GitHub に Cloudflare の credential は無い（deploy 用トークン `matatabetai Workers Builds` は Cloudflare の中だけ）。非本番ブランチのビルドは OFF（preview version が**本番** D1 を掴むため）、`docs/*` と `*.md` だけの commit はビルドしない
+- CI（`.github/workflows/ci.yml`、secrets なし、job `ci`）は Workers Builds と独立で、PR と `main` push で typecheck / build と status hub の上限検査を走らせる。**Workers Builds は CI の完了を待たない**ので、「`main` は常に CI green」は `protect-main` ruleset（PR 必須 + required check `ci`）が担保する
 
 ## 命名
 
