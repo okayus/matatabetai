@@ -115,7 +115,7 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 
 ### 段取り
 
-段取りとフェーズは [docs/roadmap.md](./docs/roadmap.md)、いまの 3 手は `docs/status.md`（自動注入）、人手で済ませる準備は `docs/plans/host-setup.md`。`.github/workflows/**` の変更は人間がホストから push する（token に `workflows` 権限なし）。
+段取りとフェーズは [docs/roadmap.md](./docs/roadmap.md)、いまの 3 手は `docs/status.md`（自動注入）。`.github/workflows/**` の変更は人間がホストから push する（token に `workflows` 権限なし）。
 
 ## コーディング思想
 
