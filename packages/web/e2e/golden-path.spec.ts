@@ -6,9 +6,10 @@ import { enableVirtualAuthenticator } from "./helpers/webauthn";
 // 配線の事実: 初回登録（パスキー作成 → users/spaces/space_members/credentials/sessions）→
 // リロードでセッションが残る → 投稿作成（meals/tags/meal_tags + 写真 2 枚: 縮小 → R2 →
 // proxy 配信・304）→ 写真 1 枚削除 → またたべたいトグル → リロードで投稿・トグル・写真が残る →
+// サジェスト（料理名ごとの直近 1 件・タグ AND 絞り込み・前回内容の引き継ぎ）→
 // 削除（R2 も消える）→ 招待リンク発行 → 別ブラウザが招待から登録 →
 // メンバーに並ぶ → ログアウト → パスキーでログインし直す。ドメインの意味はユニットに譲る。
-test("register → reload → meal record with photos → invite → second member → logout → login", async ({ page, browser, baseURL }) => {
+test("register → reload → meal record with photos → suggestion → invite → second member → logout → login", async ({ page, browser, baseURL }) => {
   await enableVirtualAuthenticator(page);
 
   await page.goto("/register");
@@ -24,6 +25,10 @@ test("register → reload → meal record with photos → invite → second memb
   await page.reload();
   await expect(page.getByRole("heading", { name: /こんにちは、e2e-owner さん/ })).toBeVisible();
 
+  // 記録フォームとみんなの記録は同じ料理名を出す（サジェストの札 / 一覧）ので、名前で分ける
+  const form = page.getByRole("form", { name: "たべたものを記録" });
+  const feed = page.getByRole("region", { name: "みんなの記録" });
+
   // 投稿作成（meals / tags / meal_tags が繋がっている）+ 写真 2 枚。
   // setInputFiles の PNG をクライアントが canvas で JPEG に縮小してから multipart で送る
   await page.getByLabel("料理名").fill("肉じゃが");
@@ -34,12 +39,12 @@ test("register → reload → meal record with photos → invite → second memb
   ]);
   await expect(page.getByAltText("選択中の写真 2")).toBeVisible();
   await page.getByRole("button", { name: "記録する" }).click();
-  await expect(page.getByText("肉じゃが", { exact: true })).toBeVisible();
-  await expect(page.getByText("じゃがいも", { exact: true })).toBeVisible();
-  await expect(page.getByText("牛肉", { exact: true })).toBeVisible();
+  await expect(feed.getByText("肉じゃが", { exact: true })).toBeVisible();
+  await expect(feed.getByText("じゃがいも", { exact: true })).toBeVisible();
+  await expect(feed.getByText("牛肉", { exact: true })).toBeVisible();
 
   // サムネ 2 枚が実際に描画された（proxy route がブラウザに解釈できるバイト列を返した事実）
-  const thumbs = page.locator("img[src*='/photos/']");
+  const thumbs = feed.locator("img[src*='/photos/']");
   await expect(thumbs).toHaveCount(2);
   await expect
     .poll(async () => thumbs.first().evaluate((el: HTMLImageElement) => el.naturalWidth))
@@ -70,22 +75,53 @@ test("register → reload → meal record with photos → invite → second memb
   expect((await page.request.get(photoPaths[1]!)).status()).toBe(200);
 
   // またたべたいトグル → リロードで投稿もトグルも写真も残る（永続化はユニットでは検知不能）
-  const mataButton = page.getByRole("button", { name: /またたべたい/ });
+  const mataButton = feed.getByRole("button", { name: /またたべたい/ });
   await expect(mataButton).toHaveAttribute("aria-pressed", "false");
   await mataButton.click();
   await expect(mataButton).toHaveAttribute("aria-pressed", "true");
   await page.reload();
-  await expect(page.getByText("肉じゃが", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /またたべたい/ })).toHaveAttribute(
+  await expect(feed.getByText("肉じゃが", { exact: true })).toBeVisible();
+  await expect(feed.getByRole("button", { name: /またたべたい/ })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  await expect(page.locator("img[src*='/photos/']")).toHaveCount(1);
+  await expect(feed.locator("img[src*='/photos/']")).toHaveCount(1);
+
+  // 2 品目（タグは別）。サジェストの絞り込みが本当に絞っているかは 2 品ないと見えない
+  await page.getByLabel("料理名").fill("カレー");
+  await page.getByLabel("タグ").fill("にんじん");
+  await page.getByRole("button", { name: "記録する" }).click();
+  await expect(feed.getByText("カレー", { exact: true })).toBeVisible();
+
+  // サジェスト: 料理名ごとの直近 1 件が札で出る（window 関数まで通っている事実）。
+  // タグは AND で絞り込み、札を選ぶと前回のタグ・リンクがフォームに複製される
+  const nikujaga = form.getByRole("button", { name: /肉じゃが/ });
+  const curry = form.getByRole("button", { name: /カレー/ });
+  await expect(nikujaga).toBeVisible();
+  await expect(curry).toBeVisible();
+  await form.locator("summary").click();
+  await form.getByRole("button", { name: "じゃがいも" }).click();
+  await expect(curry).toHaveCount(0);
+  await expect(nikujaga).toBeVisible();
+  // AND なので、両方を持つ記録は無い → どちらの札も消える
+  await form.getByRole("button", { name: "にんじん" }).click();
+  await expect(nikujaga).toHaveCount(0);
+  await expect(form.getByText("このタグの記録はまだありません")).toBeVisible();
+  await form.getByRole("button", { name: "にんじん" }).click();
+  await nikujaga.click();
+  await expect(page.getByLabel("料理名")).toHaveValue("肉じゃが");
+  await expect(page.getByLabel("タグ")).toHaveValue("じゃがいも 牛肉");
+  await expect(form.getByText(/「肉じゃが」の前回の内容を引き継ぎました/)).toBeVisible();
+
+  // カレーは用済み（残り 1 件にして、写真つきの削除を素のまま確かめる）
+  page.once("dialog", (dialog) => void dialog.accept());
+  await feed.getByRole("button", { name: /削除.*カレー/ }).click();
+  await expect(feed.getByText("カレー", { exact: true })).toHaveCount(0);
 
   // 削除（confirm を受ける）。meal と一緒に残りの写真も消える（R2 object ごと）
   page.once("dialog", (dialog) => void dialog.accept());
-  await page.getByRole("button", { name: /削除/ }).click();
-  await expect(page.getByText("肉じゃが", { exact: true })).toHaveCount(0);
+  await feed.getByRole("button", { name: /削除/ }).click();
+  await expect(feed.getByText("肉じゃが", { exact: true })).toHaveCount(0);
   await expect(page.getByText("まだ記録がありません", { exact: false })).toBeVisible();
   await expect.poll(async () => (await page.request.get(photoPaths[1]!)).status()).toBe(404);
 

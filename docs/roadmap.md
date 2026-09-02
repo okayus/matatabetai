@@ -18,7 +18,7 @@
 
 - [x] meals / tags / meal_tags / またたべたい（[requirements.md](requirements.md) の設計メモ、[ADR-003](adr/003-meals-tags.md)）
 - [x] 写真 — skill `cloudflare-r2-private-image-upload`（クライアント縮小、private R2 `matatabetai-photos`）
-- [ ] 投稿時サジェスト（直近の料理名、タグで絞り込み、前回内容の引き継ぎ）
+- [x] 投稿時サジェスト（直近の料理名、タグで絞り込み、前回内容の引き継ぎ）— [ADR-005](adr/005-meal-suggestions.md)
 - [x] e2e 3 spec — `cloudflare-workers-e2e-playwright` / `playwright-e2e-in-docker-sandbox`
 
 ## Phase 3 — 振り返れる

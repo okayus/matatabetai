@@ -12,6 +12,7 @@ import { mealPhotoRoutes } from "./routes/meal-photos";
 import { mealRoutes } from "./routes/meals";
 import { spaceDetailRoutes } from "./routes/space-detail";
 import { spaceInviteRoutes } from "./routes/space-invites";
+import { tagRoutes } from "./routes/tags";
 import { mySpacesRoutes } from "./routes/spaces";
 
 const app = new Hono<AppEnv>();
@@ -45,6 +46,7 @@ space.route("/", spaceDetailRoutes);
 space.route("/invites", spaceInviteRoutes);
 space.route("/meals", mealRoutes);
 space.route("/meals/:mealId/photos", mealPhotoRoutes);
+space.route("/tags", tagRoutes);
 protectedApi.route("/spaces/:spaceId", space);
 
 // 未知の /api/* に SPA の index.html を返さない
