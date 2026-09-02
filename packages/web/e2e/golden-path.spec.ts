@@ -113,6 +113,30 @@ test("register → reload → meal record with photos → suggestion → invite 
   await expect(page.getByLabel("タグ")).toHaveValue("じゃがいも 牛肉");
   await expect(form.getByText(/「肉じゃが」の前回の内容を引き継ぎました/)).toBeVisible();
 
+  // ふりかえり: またたべたい一覧（既定）→ ぜんぶの記録 + タグ AND → 料理名の期間集計、の配線。
+  // ♥ は肉じゃがだけに付いている状態。意味の網羅はユニットに譲る
+  await page.getByRole("link", { name: "ふりかえり" }).click();
+  const records = page.getByRole("region", { name: "記録をさがす" });
+  await expect(records.getByText("肉じゃが", { exact: true })).toBeVisible();
+  await expect(records.getByText("カレー", { exact: true })).toHaveCount(0);
+  await records.getByRole("button", { name: "ぜんぶの記録" }).click();
+  await expect(records.getByText("カレー", { exact: true })).toBeVisible();
+  await records.locator("summary").click();
+  await records.getByRole("button", { name: "にんじん" }).click();
+  await expect(records.getByText("肉じゃが", { exact: true })).toHaveCount(0);
+  await expect(records.getByText("カレー", { exact: true })).toBeVisible();
+
+  // 集計: 2 品が 1 回ずつ数えられ、期間を未来に絞ると 0 件、外すと戻る（BETWEEN の配線）
+  const statsSection = page.getByRole("region", { name: "よく食べているもの" });
+  await expect(statsSection.getByText("肉じゃが", { exact: true })).toBeVisible();
+  await expect(statsSection.getByText("1 回")).toHaveCount(2);
+  await statsSection.getByLabel("いつから").fill("2100-01-01");
+  await expect(statsSection.getByText("この期間の記録はまだありません")).toBeVisible();
+  await statsSection.getByLabel("いつから").fill("");
+  await expect(statsSection.getByText("カレー", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "ホーム" }).click();
+  await expect(feed.getByText("カレー", { exact: true })).toBeVisible();
+
   // カレーは用済み（残り 1 件にして、写真つきの削除を素のまま確かめる）
   page.once("dialog", (dialog) => void dialog.accept());
   await feed.getByRole("button", { name: /削除.*カレー/ }).click();

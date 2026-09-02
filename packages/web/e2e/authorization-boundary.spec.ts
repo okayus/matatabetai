@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { E2E_INITIAL_REGISTRATION_TOKEN } from "../playwright.config";
-import { OTHER_MEAL_ID, OTHER_SPACE_ID } from "./global-setup";
+import { OTHER_MEAL_ID, OTHER_SPACE_ID, OTHER_TAG_NAME } from "./global-setup";
 import { enableVirtualAuthenticator } from "./helpers/webauthn";
 
 // 認可の横流れ: 他スペースは API で 404（本文まで固定）、UI はアクセス拒否の一文。403 は存在を漏らす。
@@ -53,6 +53,19 @@ test("a member of space A gets 404 for space B (API and UI)", async ({ page, bas
   // （他家族の「よその肉じゃが」もそのタグも混ざらない）
   expect(await (await page.request.get(`/api/spaces/${mine}/meals/suggestions`)).json()).toEqual([]);
   expect(await (await page.request.get(`/api/spaces/${mine}/tags`)).json()).toEqual([]);
+
+  // 集計とフィルタ付き一覧も同じ集約クラス。他スペースの stats は 404、自分のスペースでは
+  // seed の「よその肉じゃが」（♥ 付き・タグ付き）がどのフィルタにも数えられない
+  const otherStats = await page.request.get(`/api/spaces/${OTHER_SPACE_ID}/meals/stats`);
+  expect(otherStats.status()).toBe(404);
+  expect(await otherStats.json()).toEqual({ error: { type: "not_found" } });
+  expect(await (await page.request.get(`/api/spaces/${mine}/meals/stats`)).json()).toEqual([]);
+  expect(await (await page.request.get(`/api/spaces/${mine}/meals?mataTabetai=1`)).json()).toEqual([]);
+  expect(
+    await (
+      await page.request.get(`/api/spaces/${mine}/meals?tags=${encodeURIComponent(OTHER_TAG_NAME)}`)
+    ).json(),
+  ).toEqual([]);
 
   // 写真ルートも同じ（photo の認可連鎖は meal の space 一致で切れる。R2 には触れない）
   const crossPhoto = await page.request.get(
