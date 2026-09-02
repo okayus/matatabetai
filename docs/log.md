@@ -3,6 +3,7 @@
 1 行 = 1 節目（PR の merge・ADR・人手作業の完了・本番の状態変化）。`- YYYY-MM-DD 何を（#PR / ADR / skill）`。
 自動ロードはされない。必要なら `head -20 docs/log.md`。作業中の試行錯誤は書かない（git log と PR にある）。
 
+- 2026-09-02 #29 を merge — 投稿時サジェスト（料理名ごとの直近 1 件を `row_number()` で名指し、タグ AND 絞り込み、前回の URL / レシピ / タグの引き継ぎ、ADR-005）。表を増やさず migration なし、絞り込み語彙に `GET /tags` を新設。投稿フォームを制御化し変換を `src/lib/meal-form.ts` の純粋関数へ。e2e は golden path に AND 絞り込みと引き継ぎ、boundary に集約クエリの space 越え検査を追加。本番 deploy 成功を `/health` で確認し **Phase 2（MVP）完了**。skill `cloudflare-workers-e2e-playwright` へ 0.3.0 を還元（okayus-skills はホスト未 commit）
 - 2026-09-01 #27 を merge — 写真アップロード（meal_photos の migration 0003 が本番 D1 に適用、private R2 `matatabetai-photos` + Worker proxy 配信・クライアント縮小 1600px/320px・`<dialog>` lightbox、ADR-004）。e2e は golden path に upload → 配信 → 304 → 削除、boundary に写真ルートの横流れ 404 を追加。スマホからの写真付き投稿を実機確認し、Phase 2 の写真が本番稼働。skill `cloudflare-r2-private-image-upload` へ 0.2.0 を還元（okayus-skills はホストで commit 済み）
 - 2026-09-01 R2 bucket `matatabetai-photos` の作成と `CLOUDFLARE_API_TOKEN` への R2 Edit 追加が完了（人手、host-setup 5 を削除）。残る人手作業は Workers Builds 接続のみ
 - 2026-09-01 初回 owner 登録が完了（人手、host-setup 6 を削除）— owner のパスキー + 2 台目の計 2 台。残る人手作業は Workers Builds 接続と R2 bucket
