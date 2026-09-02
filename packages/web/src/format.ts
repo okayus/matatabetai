@@ -22,6 +22,14 @@ export function formatEatenOn(ymd: string): string {
   return dayWithWeekday.format(new Date(y, m - 1, d));
 }
 
+const shortDay = new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric" });
+
+// サジェストの札に載せる短い日付（8/28）。読み上げには formatEatenOn の全文を添える
+export function formatShortDate(ymd: string): string {
+  const [y = 0, m = 1, d = 1] = ymd.split("-").map(Number);
+  return shortDay.format(new Date(y, m - 1, d));
+}
+
 // <input type="date"> の初期値（端末ローカル。家族は JST）
 export function todayLocalDate(): string {
   const now = new Date();

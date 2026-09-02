@@ -66,6 +66,16 @@ export type Meal = {
   createdAt: string;
   updatedAt: string;
 };
+// 投稿フォームのサジェスト（requirements 8）。料理名ごとに直近 1 件、選ぶと前回の内容を引き継ぐ
+export type MealSuggestion = {
+  mealId: string;
+  name: string;
+  lastEatenOn: string;
+  mataTabetai: boolean;
+  recipeSource: RecipeSource;
+  tags: MealTag[];
+  photo: { id: string; hasThumb: boolean } | null;
+};
 export type CreateMealBody = {
   name: string;
   eatenOn: string;
@@ -177,6 +187,12 @@ export const setMataTabetai = (spaceId: string, mealId: string, mataTabetai: boo
   );
 export const deleteMeal = (spaceId: string, mealId: string) =>
   del<Record<string, never>>(`/api/spaces/${spaceId}/meals/${mealId}`);
+// タグは同じ名前を繰り返して渡す（?tags=a&tags=b の AND 絞り込み）
+export const listMealSuggestions = (spaceId: string, tagNames: readonly string[]) => {
+  const query = new URLSearchParams(tagNames.map((name) => ["tags", name])).toString();
+  return api<MealSuggestion[]>(`/api/spaces/${spaceId}/meals/suggestions${query ? `?${query}` : ""}`);
+};
+export const listSpaceTags = (spaceId: string) => api<MealTag[]>(`/api/spaces/${spaceId}/tags`);
 
 // --- meal photos --------------------------------------------------------------------------
 // 写真は private R2 を Worker 経由で配る。<img src> は同一オリジンなので cookie が自動で付く

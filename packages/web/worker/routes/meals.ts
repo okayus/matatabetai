@@ -1,10 +1,15 @@
 import { drizzle } from "drizzle-orm/d1";
 import { Hono, type Context } from "hono";
 import { errorBody, errorStatus, parseWith, type AppError } from "../domain/errors";
-import { CreateMealInput, MealId, UpdateMataTabetaiInput } from "../domain/meal";
+import {
+  CreateMealInput,
+  MealId,
+  SuggestionTagsQuery,
+  UpdateMataTabetaiInput,
+} from "../domain/meal";
 import type { SpaceEnv } from "../env";
 import { createMeal, deleteMeal, setMataTabetai } from "../meals/commands";
-import { listMeals, type MealSummary } from "../meals/queries";
+import { listMeals, listSuggestions, type MealSummary } from "../meals/queries";
 
 function fail(c: Context<SpaceEnv>, error: AppError) {
   return c.json(errorBody(error), errorStatus(error));
@@ -14,6 +19,12 @@ function fail(c: Context<SpaceEnv>, error: AppError) {
 // meal を引く文は必ず space_id も比較する（別スペースの meal id を当てても 404）。
 export const mealRoutes = new Hono<SpaceEnv>()
   .get("/", async (c) => c.json(await listMeals(drizzle(c.env.DB), c.var.spaceId)))
+  // 投稿フォームのサジェスト。?tags=a&tags=b で AND 絞り込み（:mealId より先に登録する）
+  .get("/suggestions", async (c) => {
+    const tags = parseWith(SuggestionTagsQuery, c.req.queries("tags") ?? []);
+    if (tags.isErr()) return fail(c, tags.error);
+    return c.json(await listSuggestions(drizzle(c.env.DB), c.var.spaceId, tags.value));
+  })
   .post("/", async (c) => {
     const parsed = parseWith(CreateMealInput, await c.req.json().catch(() => undefined));
     if (parsed.isErr()) return fail(c, parsed.error);

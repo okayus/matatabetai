@@ -26,7 +26,7 @@
 - 将来の一般公開に備え、bot scan 対策・レート制限・認可境界はインフラ側で最初から持つ
 - 家族規模の運用で十分な範囲に留める: リアルタイム同期・通知・栄養計算は要件外
 
-## ドメインモデル（草案 — 実装時に ADR で確定する。認証・スペースの 6 表は [ADR-002](adr/002-auth-spaces-invites.md)、meals / tags / meal_tags は [ADR-003](adr/003-meals-tags.md)、meal_photos は [ADR-004](adr/004-meal-photos-r2.md) で確定済み）
+## ドメインモデル（草案 — 実装時に ADR で確定する。認証・スペースの 6 表は [ADR-002](adr/002-auth-spaces-invites.md)、meals / tags / meal_tags は [ADR-003](adr/003-meals-tags.md)、meal_photos は [ADR-004](adr/004-meal-photos-r2.md) で確定済み。サジェストは表を増やさず読みだけで組む — [ADR-005](adr/005-meal-suggestions.md)）
 
 ```
 spaces / space_members / invites          ← skill cloudflare-workers-space-membership-invite
@@ -50,7 +50,7 @@ meal_tags    (meal_id, tag_id)                       PK(meal_id, tag_id)
 
 - 集計: `SELECT name, COUNT(*) FROM meals WHERE space_id = ? AND eaten_on BETWEEN ? AND ? GROUP BY name_normalized ORDER BY COUNT(*) DESC`
 - タグ検索（AND）: `meal_tags` を tag ごとに JOIN、または `GROUP BY meal_id HAVING COUNT(DISTINCT tag_id) = N`
-- サジェスト: `SELECT name, MAX(eaten_on) FROM meals WHERE space_id = ? [AND meal_id IN (tag filter)] GROUP BY name_normalized ORDER BY 2 DESC LIMIT 20`
+- サジェスト: 料理名ごとの直近 1 件（`row_number() over (partition by name_normalized order by eaten_on desc, created_at desc)` = 1）を `eaten_on DESC` で 20 件。`GROUP BY` + `MAX` の bare column は同着で行が定まらない — [ADR-005](adr/005-meal-suggestions.md) §2
 - またたべたい: `WHERE mata_tabetai = 1 ORDER BY eaten_on DESC`
 - 部分一致: `name_normalized LIKE '%' || ? || '%'`（FTS5 は要件が出てから）
 
@@ -64,7 +64,7 @@ meal_tags    (meal_id, tag_id)                       PK(meal_id, tag_id)
 
 - **集計は料理名**（`meals.name`）で `GROUP BY`。同じ料理でも冷蔵庫の中身で食材が変わるため、食材ではなく名前が集計単位。保存時に NFKC 正規化 + trim した `name_normalized` を持ち、表記ゆれを減らす
 - **食材はタグ**（`tags` / `meal_tags` の多対多、スペース単位で一意）。タグ検索は `?tags=a&tags=b` の AND
-- **サジェスト**: 投稿画面で直近の料理名を `DISTINCT` で出し、タグで絞り込める。選ぶと前回の URL / レシピ / タグを複製して編集できる
+- **サジェスト**: 投稿画面に料理名ごとの直近 1 件を出し、タグ（AND）で絞り込める。選ぶと前回の URL / レシピ / タグを複製して編集できる（メモ・日付・タイミングは引き継がない — [ADR-005](adr/005-meal-suggestions.md) §5）
 - **URL** は 1 本（レシピ／外食の店／購入した商品）、**自作レシピ**は本文 — `RecipeSource` の Discriminated Union
 - **またたべたい** は投稿に対するトグル（favorite）。UI 上の主役なので一覧・集計で前に出す
 - **日本語の部分一致検索**は当面 `LIKE '%…%'`（家族規模）。D1 の FTS5 は使えるが日本語には trigram tokenizer が要り、D1 での可否は要確認

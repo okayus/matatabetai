@@ -30,6 +30,12 @@ test("a member of space A gets 404 for space B (API and UI)", async ({ page, bas
   expect(write.status()).toBe(404);
   expect(await write.json()).toEqual({ error: { type: "not_found" } });
 
+  const otherSuggestions = await page.request.get(
+    `/api/spaces/${OTHER_SPACE_ID}/meals/suggestions`,
+  );
+  expect(otherSuggestions.status()).toBe(404);
+  expect(await otherSuggestions.json()).toEqual({ error: { type: "not_found" } });
+
   // 自分のスペースは見える（404 が配線の壊れではなく所属判定であることの対照）
   const me = await page.request.get("/api/auth/me");
   const mine = ((await me.json()) as { spaces: { id: string }[] }).spaces[0]?.id ?? "";
@@ -42,6 +48,11 @@ test("a member of space A gets 404 for space B (API and UI)", async ({ page, bas
   });
   expect(crossPatch.status()).toBe(404);
   expect(await crossPatch.json()).toEqual({ error: { type: "not_found" } });
+
+  // サジェストとタグは集約するぶん space_id を落としやすい。自分のスペースは空のまま
+  // （他家族の「よその肉じゃが」もそのタグも混ざらない）
+  expect(await (await page.request.get(`/api/spaces/${mine}/meals/suggestions`)).json()).toEqual([]);
+  expect(await (await page.request.get(`/api/spaces/${mine}/tags`)).json()).toEqual([]);
 
   // 写真ルートも同じ（photo の認可連鎖は meal の space 一致で切れる。R2 には触れない）
   const crossPhoto = await page.request.get(

@@ -135,3 +135,6 @@ export const CreateMealInput = z.object({
 export type CreateMealInput = z.output<typeof CreateMealInput>;
 
 export const UpdateMataTabetaiInput = z.object({ mataTabetai: z.boolean() });
+
+// サジェストのタグ絞り込み（AND）。?tags=a&tags=b の繰り返しで受け取り、正規形で重複を畳む
+export const SuggestionTagsQuery = z.array(TagName).max(10).transform(uniqueTagNames);
