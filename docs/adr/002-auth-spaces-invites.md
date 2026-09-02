@@ -43,7 +43,7 @@ HS256 JWT（`sid`）+ `sessions` 行（真実はこちら。logout は行の削�
 
 ## 影響
 
-- deploy 前に `SESSION_SECRET`、初回 owner 登録のときだけ `INITIAL_REGISTRATION_TOKEN` を put → 登録 → delete（[plans/host-setup.md](../plans/host-setup.md) 6）。secret が無いと `/api/auth/*` は 500 になるが登録の扉は閉じたまま
+- deploy 前に `SESSION_SECRET`、初回 owner 登録のときだけ `INITIAL_REGISTRATION_TOKEN` を put → 登録 → delete（2026-09-01 に実施済み、[log.md](../log.md)）。secret が無いと `/api/auth/*` は 500 になるが登録の扉は閉じたまま
 - passkey を 1 つでも登録する前にドメインを確定する（ADR-001 §2、roadmap 決めること 4）。merge 後も `INITIAL_REGISTRATION_TOKEN` を put するまで登録は `403 registration_closed`
 - 家族に薦めること: 登録直後に 2 台目（または同期されるパスキー）を追加する。最後のパスキーは消せない（`400 last_credential`）
 
