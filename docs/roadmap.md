@@ -23,7 +23,7 @@
 
 ## Phase 3 — 振り返れる
 
-- [ ] 料理名の集計（期間）、タグ検索（AND）、またたべたい一覧
+- [x] 料理名の集計（期間）、タグ検索（AND）、またたべたい一覧 — [ADR-006](adr/006-lookback-stats-tag-search.md)
 - [ ] レシピ URL の OGP 表示（`HTMLRewriter`）— okayus-skills の新 skill 候補
 - [ ] 週 / 月の集計 UI、タグクラウド
 
