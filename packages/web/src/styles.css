@@ -331,10 +331,11 @@
     color: var(--color-muted);
     font-size: 0.75rem;
   }
-  .suggest-card__mata {
+  .suggest-card__mata,
+  .stat-mata {
     color: var(--color-accent);
   }
-  .suggest-filter summary {
+  .tag-filter summary {
     font-size: 0.875rem;
   }
   /* 絞り込みタグ。押した瞬間に一覧が変わるので、checkbox ではなく押下状態のボタン */

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/d1";
 import { mealTags, meals, tags, users } from "../db/schema";
 import { normalizeName, recipeSourceFromColumns, type MealType, type RecipeSource } from "../domain/meal";
@@ -24,10 +24,19 @@ export type MealSummary = {
   updatedAt: string;
 };
 
-// 直近だけ返す（期間 UI は Phase 3）。D1 の bound parameter 上限に inArray が収まる値にする
+// 直近だけ返す（ページングは要件が出てから）。D1 の bound parameter 上限に inArray が収まる値にする
 export const MEAL_LIST_LIMIT = 50;
 
-export async function listMeals(db: Db, spaceId: string): Promise<MealSummary[]> {
+// またたべたい一覧（requirements 9）とタグ検索 AND（requirements 6）は、別リソースではなく
+// 同じ一覧の絞り込み。2 つは直交して合成できる（「またたべたいの中からじゃがいもで」）
+export type MealListFilter = { tagNames: readonly string[]; mataTabetaiOnly: boolean };
+
+export async function listMeals(
+  db: Db,
+  spaceId: string,
+  filter: MealListFilter,
+): Promise<MealSummary[]> {
+  const keys = filter.tagNames.map(normalizeName);
   const rows = await db
     .select({
       id: meals.id,
@@ -46,7 +55,13 @@ export async function listMeals(db: Db, spaceId: string): Promise<MealSummary[]>
     })
     .from(meals)
     .innerJoin(users, eq(meals.createdBy, users.id))
-    .where(eq(meals.spaceId, spaceId))
+    .where(
+      and(
+        eq(meals.spaceId, spaceId),
+        filter.mataTabetaiOnly ? eq(meals.mataTabetai, true) : undefined,
+        keys.length === 0 ? undefined : inArray(meals.id, mealIdsWithAllTags(db, spaceId, keys)),
+      ),
+    )
     .orderBy(desc(meals.eatenOn), desc(meals.createdAt))
     .limit(MEAL_LIST_LIMIT);
 
@@ -174,6 +189,63 @@ export async function listSuggestions(
       photo: first ? { id: first.id, hasThumb: first.hasThumb } : null,
     };
   });
+}
+
+// 料理名の期間集計（requirements 7「主要クエリ」）。GROUP BY name_normalized 相当を window で
+// 書き、表示名と最終日は rank = 1（その名前の直近 1 件）から拾う — bare column の非決定を避ける
+// 理由・形とも listSuggestions と同じ（ADR-005 §2）。並びは回数の多い順、同数は直近が先。
+// ♥ は期間内のどれかに付いていれば立てる（要件 9「集計で前に出す」は並びではなく印で満たす）
+export const MEAL_STATS_LIMIT = 100;
+
+export type MealNameStat = {
+  name: string;
+  count: number;
+  lastEatenOn: string;
+  mataTabetai: boolean;
+};
+
+export async function aggregateMealNames(
+  db: Db,
+  spaceId: string,
+  range: { from?: string | undefined; to?: string | undefined },
+): Promise<MealNameStat[]> {
+  const ranked = db.$with("ranked").as(
+    db
+      .select({
+        name: meals.name,
+        nameNormalized: meals.nameNormalized,
+        lastEatenOn: meals.eatenOn,
+        rank: sql<number>`row_number() over (partition by ${meals.nameNormalized} order by ${meals.eatenOn} desc, ${meals.createdAt} desc)`.as(
+          "rank",
+        ),
+        count: sql<number>`count(*) over (partition by ${meals.nameNormalized})`.as("count"),
+        everMataTabetai: sql<number>`max(${meals.mataTabetai}) over (partition by ${meals.nameNormalized})`.as(
+          "ever_mata_tabetai",
+        ),
+      })
+      .from(meals)
+      .where(
+        and(
+          eq(meals.spaceId, spaceId),
+          range.from === undefined ? undefined : gte(meals.eatenOn, range.from),
+          range.to === undefined ? undefined : lte(meals.eatenOn, range.to),
+        ),
+      ),
+  );
+
+  const rows = await db
+    .with(ranked)
+    .select({
+      name: ranked.name,
+      lastEatenOn: ranked.lastEatenOn,
+      count: ranked.count,
+      everMataTabetai: ranked.everMataTabetai,
+    })
+    .from(ranked)
+    .where(eq(ranked.rank, 1))
+    .orderBy(desc(ranked.count), desc(ranked.lastEatenOn), asc(ranked.nameNormalized))
+    .limit(MEAL_STATS_LIMIT);
+  return rows.map(({ everMataTabetai, ...rest }) => ({ ...rest, mataTabetai: everMataTabetai > 0 }));
 }
 
 // サジェストの絞り込み候補。よく使う順に返す（家族が最初に触るタグを前に出す）。

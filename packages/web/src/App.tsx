@@ -4,6 +4,7 @@ import { AccountPage } from "./pages/AccountPage";
 import { HomePage } from "./pages/HomePage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
+import { LookBackPage } from "./pages/LookBackPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { SpaceSettingsPage } from "./pages/SpaceSettingsPage";
@@ -30,6 +31,7 @@ function Shell() {
           {state.status === "authed" && (
             <nav aria-label="メイン" className="row">
               <Link href="/">ホーム</Link>
+              <Link href="/lookback">ふりかえり</Link>
               <Link href="/account">アカウント</Link>
             </nav>
           )}
@@ -47,11 +49,13 @@ function route(path: string, state: AuthState) {
 
   const settings = matchPath("/spaces/:spaceId/settings", path);
   const spaceId = settings?.["spaceId"];
-  if (path !== "/" && path !== "/account" && spaceId === undefined) return <NotFoundPage />;
+  const isStatic = path === "/" || path === "/lookback" || path === "/account";
+  if (!isStatic && spaceId === undefined) return <NotFoundPage />;
 
   if (state.status === "loading") return <p className="muted">読み込み中…</p>;
   if (state.status === "anonymous") return <LoginPage />;
   if (path === "/") return <HomePage me={state.me} />;
+  if (path === "/lookback") return <LookBackPage me={state.me} />;
   if (path === "/account") return <AccountPage me={state.me} />;
   return <SpaceSettingsPage me={state.me} spaceId={spaceId ?? ""} />;
 }

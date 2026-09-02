@@ -136,5 +136,26 @@ export type CreateMealInput = z.output<typeof CreateMealInput>;
 
 export const UpdateMataTabetaiInput = z.object({ mataTabetai: z.boolean() });
 
-// サジェストのタグ絞り込み（AND）。?tags=a&tags=b の繰り返しで受け取り、正規形で重複を畳む
-export const SuggestionTagsQuery = z.array(TagName).max(10).transform(uniqueTagNames);
+// タグ絞り込み（AND）。?tags=a&tags=b の繰り返しで受け取り、正規形で重複を畳む。
+// サジェストと一覧のタグ検索で同じ語彙・同じ意味（requirements 6 / 8）
+export const TagFilterQuery = z.array(TagName).max(10).transform(uniqueTagNames);
+
+// 一覧のフィルタ（requirements 6 / 9）。またたべたいは「絞るか絞らないか」の一択なので
+// 値は "1" だけを受け、他の値は入力ミスとして弾く
+export const MealListQuery = z.object({
+  tags: TagFilterQuery,
+  mataTabetai: z
+    .literal("1")
+    .optional()
+    .transform((v) => v !== undefined),
+});
+export type MealListQuery = z.output<typeof MealListQuery>;
+
+// 料理名の期間集計（requirements 7）。from / to は任意で、両端を含む（BETWEEN と同じ読み）
+export const MealStatsQuery = z
+  .object({ from: EatenOn.optional(), to: EatenOn.optional() })
+  .refine((r) => r.from === undefined || r.to === undefined || r.from <= r.to, {
+    error: "「いつから」は「いつまで」より前の日付にしてください",
+    path: ["from"],
+  });
+export type MealStatsQuery = z.output<typeof MealStatsQuery>;

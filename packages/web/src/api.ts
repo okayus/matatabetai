@@ -66,6 +66,13 @@ export type Meal = {
   createdAt: string;
   updatedAt: string;
 };
+// 料理名の期間集計の 1 行（requirements 7）。name は直近 1 件の表記、♥ は期間内のどれかに付いていれば真
+export type MealNameStat = {
+  name: string;
+  count: number;
+  lastEatenOn: string;
+  mataTabetai: boolean;
+};
 // 投稿フォームのサジェスト（requirements 8）。料理名ごとに直近 1 件、選ぶと前回の内容を引き継ぐ
 export type MealSuggestion = {
   mealId: string;
@@ -177,7 +184,28 @@ export const removeMember = (spaceId: string, userId: string) =>
   del<Record<string, never>>(`/api/spaces/${spaceId}/members/${userId}`);
 
 // --- meals --------------------------------------------------------------------------------
-export const listMeals = (spaceId: string) => api<Meal[]>(`/api/spaces/${spaceId}/meals`);
+// tags は AND（同じ名前を繰り返して渡す）、mataTabetai は「またたべたい」だけに絞る
+export type MealListFilter = {
+  tags?: readonly string[] | undefined;
+  mataTabetai?: boolean | undefined;
+};
+export const listMeals = (spaceId: string, filter: MealListFilter = {}) => {
+  const params = new URLSearchParams((filter.tags ?? []).map((name) => ["tags", name]));
+  if (filter.mataTabetai) params.set("mataTabetai", "1");
+  const query = params.toString();
+  return api<Meal[]>(`/api/spaces/${spaceId}/meals${query ? `?${query}` : ""}`);
+};
+// 料理名の期間集計。from / to は YYYY-MM-DD で任意（無指定は全期間）、両端を含む
+export const listMealStats = (
+  spaceId: string,
+  range: { from?: string | undefined; to?: string | undefined } = {},
+) => {
+  const params = new URLSearchParams();
+  if (range.from) params.set("from", range.from);
+  if (range.to) params.set("to", range.to);
+  const query = params.toString();
+  return api<MealNameStat[]>(`/api/spaces/${spaceId}/meals/stats${query ? `?${query}` : ""}`);
+};
 export const createMeal = (spaceId: string, body: CreateMealBody) =>
   post<Meal>(`/api/spaces/${spaceId}/meals`, body);
 export const setMataTabetai = (spaceId: string, mealId: string, mataTabetai: boolean) =>

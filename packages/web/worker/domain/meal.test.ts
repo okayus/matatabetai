@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CreateMealInput,
   EatenOn,
+  MealListQuery,
+  MealStatsQuery,
   TagName,
   isHttpUrl,
   normalizeName,
@@ -65,6 +67,40 @@ describe("uniqueTagNames", () => {
   it("正規形で重複を除き、表示は最初の表記が勝つ", () => {
     const input = ["トマト", "ﾄﾏﾄ", "Tomato", "tomato", "とまと"].map((s) => TagName.parse(s));
     expect(uniqueTagNames(input)).toEqual(["トマト", "Tomato", "とまと"]);
+  });
+});
+
+describe("MealListQuery", () => {
+  it("タグは正規形で重複を畳み、mataTabetai は無指定で偽・\"1\" で真", () => {
+    const r = MealListQuery.safeParse({ tags: ["トマト", "ﾄﾏﾄ"] });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.tags).toEqual(["トマト"]);
+      expect(r.data.mataTabetai).toBe(false);
+    }
+    const on = MealListQuery.safeParse({ tags: [], mataTabetai: "1" });
+    expect(on.success).toBe(true);
+    if (on.success) expect(on.data.mataTabetai).toBe(true);
+  });
+  it("mataTabetai は「絞るか絞らないか」の一択 — \"1\" 以外の値は弾く", () => {
+    expect(MealListQuery.safeParse({ tags: [], mataTabetai: "true" }).success).toBe(false);
+    expect(MealListQuery.safeParse({ tags: [], mataTabetai: "0" }).success).toBe(false);
+  });
+});
+
+describe("MealStatsQuery", () => {
+  it("from / to は任意で、片方だけ・同じ日も許す", () => {
+    expect(MealStatsQuery.safeParse({}).success).toBe(true);
+    expect(MealStatsQuery.safeParse({ from: "2026-01-01" }).success).toBe(true);
+    expect(MealStatsQuery.safeParse({ to: "2026-01-31" }).success).toBe(true);
+    expect(
+      MealStatsQuery.safeParse({ from: "2026-09-02", to: "2026-09-02" }).success,
+    ).toBe(true);
+  });
+  it("逆転した期間（from > to）は弾く", () => {
+    expect(
+      MealStatsQuery.safeParse({ from: "2026-09-02", to: "2026-09-01" }).success,
+    ).toBe(false);
   });
 });
 

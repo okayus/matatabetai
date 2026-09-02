@@ -5,6 +5,10 @@ import { executeLocalSql, resetLocalDb } from "./helpers/db";
 export const OTHER_USER_ID = "00000000-0000-4000-8000-000000000099";
 export const OTHER_SPACE_ID = "00000000-0000-4000-8000-000000000098";
 export const OTHER_MEAL_ID = "00000000-0000-4000-8000-000000000097";
+const OTHER_TAG_ID = "00000000-0000-4000-8000-000000000096";
+// 他家族の meal には ♥ とタグを付けて seed する。フィルタ付き一覧・集計・タグ語彙が
+// 自分のスペースで空である検査を「実在するのに混ざらない」の意味にするため
+export const OTHER_TAG_NAME = "よそのじゃがいも";
 
 export default function globalSetup(): void {
   // migration をローカル state に適用（冪等）してから全消し → 他家族を seed
@@ -18,7 +22,9 @@ export default function globalSetup(): void {
       `INSERT INTO users (id, display_name, created_at) VALUES ('${OTHER_USER_ID}', 'other', '${t}')`,
       `INSERT INTO spaces (id, name, created_at) VALUES ('${OTHER_SPACE_ID}', 'other family', '${t}')`,
       `INSERT INTO space_members (space_id, user_id, role, created_at) VALUES ('${OTHER_SPACE_ID}', '${OTHER_USER_ID}', 'owner', '${t}')`,
-      `INSERT INTO meals (id, space_id, name, name_normalized, eaten_on, meal_type, recipe_source_type, url, recipe_text, note, mata_tabetai, created_by, created_at, updated_at) VALUES ('${OTHER_MEAL_ID}', '${OTHER_SPACE_ID}', 'よその肉じゃが', 'よその肉じゃが', '2026-01-01', NULL, 'none', NULL, NULL, NULL, 0, '${OTHER_USER_ID}', '${t}', '${t}')`,
+      `INSERT INTO meals (id, space_id, name, name_normalized, eaten_on, meal_type, recipe_source_type, url, recipe_text, note, mata_tabetai, created_by, created_at, updated_at) VALUES ('${OTHER_MEAL_ID}', '${OTHER_SPACE_ID}', 'よその肉じゃが', 'よその肉じゃが', '2026-01-01', NULL, 'none', NULL, NULL, NULL, 1, '${OTHER_USER_ID}', '${t}', '${t}')`,
+      `INSERT INTO tags (id, space_id, name, name_normalized, created_at) VALUES ('${OTHER_TAG_ID}', '${OTHER_SPACE_ID}', '${OTHER_TAG_NAME}', '${OTHER_TAG_NAME}', '${t}')`,
+      `INSERT INTO meal_tags (meal_id, tag_id) VALUES ('${OTHER_MEAL_ID}', '${OTHER_TAG_ID}')`,
     ].join("; "),
   );
 }
