@@ -80,7 +80,7 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 
 ### ブランチ戦略
 
-`main` への直接 commit/push は禁止。すべての変更は PR 経由で squash merge する。リポジトリは **public**（2026-08-23）で、main はサーバー側の `protect-main` ruleset（PR 必須 + required check `ci` + force push 禁止 + `bypass_actors: []`）が守る。hook（`.claude/hooks/block-main-commit.sh`）と `.claude/settings.json` の deny は事故を早く止める二重化で、境界は ruleset と token scope（ADR-001 改訂 2026-08-24）。
+`main` への直接 commit/push は禁止。すべての変更は PR 経由で squash merge する。リポジトリは **public**（2026-08-23）で、main はサーバー側の `protect-main` ruleset（PR 必須 + required check `ci` + force push 禁止 + `bypass_actors: []`）が守る。hook（`.claude/hooks/block-main-commit.py`）と `.claude/settings.json` の deny は事故を早く止める二重化で、境界は ruleset と token scope（ADR-001 改訂 2026-08-24）。hook は `cd` と `git -C` を追って **その git が走るリポジトリ**のブランチを見るので、`cd ../okayus-skills && git commit …`（skill の還元）は止めない。
 
 **サンドボックス内エージェント**（コンテナ内 claude）の作業フロー:
 
