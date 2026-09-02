@@ -137,11 +137,11 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 type MealId = string & { readonly __brand: unique symbol };
 const MealId = z.string().uuid().brand<"MealId">();
 
-// レシピの出所は URL / 自由テキスト / なし のいずれか → Discriminated Union で表現
-type RecipeSource =
-  | { type: "url"; url: string }
-  | { type: "text"; text: string }
-  | { type: "none" };
+// リンクプレビューは 取得中 / 成功 / 失敗 のいずれか → Discriminated Union で表現
+type LinkPreview =
+  | { status: "pending" }
+  | { status: "ok"; title: string; imageKey: string | null }
+  | { status: "failed" };
 
 // ドメインロジックは純粋関数 + Result 型
 function createMealRecord(input: unknown): Result<MealRecord, ValidationError> {
