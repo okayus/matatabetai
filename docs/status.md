@@ -16,10 +16,10 @@
 
 ## 詰まり・人手待ち
 
-- **okayus-skills #39 が open**: Workers Builds skill 0.4.0（既存 Worker の接続経路）。push 起動の実証を書いた追い commit がローカル未 push（`block-main-commit.sh` がホストの cwd を見るため人手）
+- **okayus-skills #40 が open**: Workers Builds skill 0.4.1（監視パス除外のスキップは check-run が作られない）。0.4.0 は merge 済み
 - **スマホ実機確認が未**: サジェストの札（記録が数件ないと出ない）と、#31 のふりかえり（♥ 既定・タグ絞り込み・集計）
 - `.github/workflows/**` の yaml は token で push 不可のまま（残るは `ci.yml` 1 本。action 更新は Dependabot）
 
 ## 進行中 PR
 
-- なし
+- **#35** `block-main-commit` を Python 化 — `cd` / `git -C` を追って対象リポジトリのブランチを見る。`.claude/**` なので人間 merge
