@@ -163,6 +163,20 @@
     color: var(--color-muted);
     font-size: 0.875rem;
   }
+  /* 関連する入力のまとまり（レシピ・リンクの 3 項目）。既定の枠は外し、legend を小見出しに使う。
+     flex は中の .stack が持つ（fieldset 自身を flex コンテナにすると legend の扱いが揺れる） */
+  .fieldgroup {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .fieldgroup > legend {
+    padding: 0;
+    font-weight: 600;
+  }
+  .fieldgroup > .hint {
+    margin-block: var(--space-1) var(--space-2);
+  }
   .btn {
     display: inline-flex;
     align-items: center;

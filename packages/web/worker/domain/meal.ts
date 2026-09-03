@@ -58,9 +58,7 @@ export function isHttpUrl(s: string): boolean {
   }
 }
 
-const RecipeUrl = z.string().trim().max(2048).refine(isHttpUrl, "http(s) の URL を指定してください");
-
-// メモ・自作レシピは改行を許す（\n \r \t 以外の制御文字は不可）
+// ひとことメモ・作り方メモは改行を許す（\n \r \t 以外の制御文字は不可）
 const multiline = (max: number) =>
   z
     .string()
@@ -68,41 +66,37 @@ const multiline = (max: number) =>
     .max(max)
     .regex(/^[\P{Cc}\n\r\t]*$/u, "使えない文字が含まれています");
 
-// レシピの出所は URL / 自由テキスト / なし のいずれか（CLAUDE.md の RecipeSource）
-export const RecipeSource = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("url"), url: RecipeUrl }),
-  z.object({ type: z.literal("text"), text: multiline(5000).min(1) }),
-  z.object({ type: z.literal("none") }),
-]);
-export type RecipeSource = z.output<typeof RecipeSource>;
+// 空文字・空白だけの入力は「なし」に畳む（DeviceNameField と同じ規則）
+const optionalText = (max: number) =>
+  multiline(max)
+    .nullish()
+    .transform((v) => (v ? v : null));
 
-export type RecipeSourceColumns = {
-  recipeSourceType: RecipeSource["type"];
-  url: string | null;
-  recipeText: string | null;
+// 任意の URL 欄。値があるときだけ http(s) を要求する
+const optionalUrl = z
+  .string()
+  .trim()
+  .max(2048)
+  .nullish()
+  .transform((v) => (v ? v : null))
+  .refine((v) => v === null || isHttpUrl(v), "http(s) の URL を指定してください");
+
+// レシピ URL / お店・商品 URL / 作り方メモ は独立した任意の 3 項目（ADR-007 §1）。
+// 排他ではないので DU にしない — 「レシピを見つつ自分のアレンジも書く」が実際の記録の形。
+// note（その回のエピソード）は 3 項目とは別物で、サジェストの引き継ぎ対象にも入らない
+export type MealLinks = {
+  recipeUrl: string | null;
+  shopUrl: string | null;
+  recipeMemo: string | null;
 };
 
-// DU ⇔ 平坦化した 3 列（DB の meals_recipe_source_check と同じ対応）
-export function recipeSourceToColumns(rs: RecipeSource): RecipeSourceColumns {
-  switch (rs.type) {
-    case "url":
-      return { recipeSourceType: "url", url: rs.url, recipeText: null };
-    case "text":
-      return { recipeSourceType: "text", url: null, recipeText: rs.text };
-    case "none":
-      return { recipeSourceType: "none", url: null, recipeText: null };
-  }
-}
+// 旧 RecipeSource の CHECK（meals_recipe_source_check）は table rebuild を避けて凍結したまま
+// なので、書き込みのたびに CHECK を満たす値を導出する（ADR-007 §2）。
+// url は常に NULL（リンクは recipe_url / shop_url が持つ）、type は作り方メモの有無だけで決まる
+export type FrozenRecipeColumns = { recipeSourceType: "text" | "none"; url: null };
 
-// 行 → DU。CHECK 制約があるので不整合行は来ないはずだが、総関数にして none に落とす
-export function recipeSourceFromColumns(
-  type: string,
-  url: string | null,
-  recipeText: string | null,
-): RecipeSource {
-  if (type === "url" && url !== null) return { type: "url", url };
-  if (type === "text" && recipeText !== null) return { type: "text", text: recipeText };
-  return { type: "none" };
+export function frozenRecipeColumns(recipeMemo: string | null): FrozenRecipeColumns {
+  return { recipeSourceType: recipeMemo === null ? "none" : "text", url: null };
 }
 
 // 正規形で重複を除く。表示名は最初に現れた表記が勝つ
@@ -125,11 +119,10 @@ export const CreateMealInput = z.object({
   name: MealName,
   eatenOn: EatenOn,
   mealType: nullableField(MealType),
-  recipeSource: RecipeSource,
-  // 空文字は「なし」（DeviceNameField と同じ規則）
-  note: multiline(1000)
-    .nullish()
-    .transform((v) => (v ? v : null)),
+  recipeUrl: optionalUrl,
+  shopUrl: optionalUrl,
+  recipeMemo: optionalText(5000),
+  note: optionalText(1000),
   tags: z.array(TagName).max(20).default([]),
 });
 export type CreateMealInput = z.output<typeof CreateMealInput>;

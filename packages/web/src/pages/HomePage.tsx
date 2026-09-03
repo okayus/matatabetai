@@ -25,7 +25,6 @@ import {
   applySuggestion,
   emptyMealForm,
   toCreateMealBody,
-  toSourceKind,
   MEAL_TYPES,
   MEAL_TYPE_LABEL,
   type MealFormState,
@@ -217,7 +216,7 @@ function MealForm({
       />
       {/* 空でも要素を残す（後から現れる live region は読み上げられないことがある） */}
       <p className="hint status-line" role="status">
-        {carriedOver && `「${carriedOver}」の前回の内容を引き継ぎました。日付とメモは今回の分をどうぞ。`}
+        {carriedOver && `「${carriedOver}」の前回の内容を引き継ぎました。日付とひとことメモは今回の分をどうぞ。`}
       </p>
       <div className="row">
         <div className="field field--grow">
@@ -293,49 +292,53 @@ function MealForm({
           ))}
         </ul>
       )}
-      <div className="field">
-        <label htmlFor="mealSourceKind">レシピ・リンク</label>
-        <select
-          id="mealSourceKind"
-          value={form.sourceKind}
-          onChange={(e) => set("sourceKind", toSourceKind(e.currentTarget.value))}
-        >
-          <option value="none">なし</option>
-          <option value="url">リンクを載せる（レシピ・お店・商品）</option>
-          <option value="text">自分でレシピを書く</option>
-        </select>
-      </div>
-      {form.sourceKind === "url" && (
-        <div className="field">
-          <label htmlFor="mealUrl">リンク（URL）</label>
-          <input
-            id="mealUrl"
-            name="url"
-            type="url"
-            required
-            placeholder="https://…"
-            maxLength={2048}
-            value={form.url}
-            onChange={(e) => set("url", e.currentTarget.value)}
-          />
+      {/* 3 つは排他ではない（ADR-007 §1）。関連する入力のまとまりなので fieldset + legend */}
+      <fieldset className="fieldgroup" aria-describedby="mealLinksHint">
+        <legend>レシピ・リンク</legend>
+        <p id="mealLinksHint" className="hint">
+          どれも任意です。レシピを見ながら自分のアレンジも一緒に残せます
+        </p>
+        <div className="stack">
+          <div className="field">
+            <label htmlFor="mealRecipeUrl">レシピ URL</label>
+            <input
+              id="mealRecipeUrl"
+              name="recipeUrl"
+              type="url"
+              placeholder="https://…"
+              maxLength={2048}
+              value={form.recipeUrl}
+              onChange={(e) => set("recipeUrl", e.currentTarget.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="mealShopUrl">お店・商品 URL</label>
+            <input
+              id="mealShopUrl"
+              name="shopUrl"
+              type="url"
+              placeholder="https://…"
+              maxLength={2048}
+              value={form.shopUrl}
+              onChange={(e) => set("shopUrl", e.currentTarget.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="mealRecipeMemo">作り方メモ</label>
+            <textarea
+              id="mealRecipeMemo"
+              name="recipeMemo"
+              rows={4}
+              maxLength={5000}
+              placeholder="例: みりんを少し多めに"
+              value={form.recipeMemo}
+              onChange={(e) => set("recipeMemo", e.currentTarget.value)}
+            />
+          </div>
         </div>
-      )}
-      {form.sourceKind === "text" && (
-        <div className="field">
-          <label htmlFor="mealRecipeText">レシピ</label>
-          <textarea
-            id="mealRecipeText"
-            name="recipeText"
-            required
-            rows={4}
-            maxLength={5000}
-            value={form.recipeText}
-            onChange={(e) => set("recipeText", e.currentTarget.value)}
-          />
-        </div>
-      )}
+      </fieldset>
       <div className="field">
-        <label htmlFor="mealNote">メモ</label>
+        <label htmlFor="mealNote">ひとことメモ</label>
         <textarea
           id="mealNote"
           name="note"
@@ -359,7 +362,7 @@ function MealForm({
 }
 
 // 投稿フォームのサジェスト（requirements 8）。料理名ごとの直近 1 件を新しい順に並べ、
-// 選ぶと前回の URL / レシピ / タグをフォームに複製する（編集してから新規投稿する — ADR-003 §5）
+// 選ぶと前回のリンク 2 種 / 作り方メモ / タグをフォームに複製する（編集してから新規投稿 — ADR-003 §5）
 function SuggestionPicker({
   spaceId,
   reloadKey,
@@ -407,7 +410,7 @@ function SuggestionPicker({
   return (
     <div className="field">
       <h3>最近のたべたもの</h3>
-      <span className="hint">タップすると前回の URL・レシピ・タグを引き継ぎます</span>
+      <span className="hint">タップすると前回のリンク・作り方メモ・タグを引き継ぎます</span>
       <TagFilter tagList={tagList} selected={selected} onToggle={toggleTag} />
       {suggestions.length === 0 ? (
         <p className="hint">このタグの記録はまだありません。</p>

@@ -7,7 +7,6 @@ import {
   parseTagInput,
   toCreateMealBody,
   toMealType,
-  toSourceKind,
   type MealFormState,
 } from "./meal-form";
 
@@ -16,9 +15,9 @@ const filled: MealFormState = {
   eatenOn: "2026-09-02",
   mealType: "dinner",
   tags: "じゃがいも 牛肉",
-  sourceKind: "none",
-  url: "",
-  recipeText: "",
+  recipeUrl: "",
+  shopUrl: "",
+  recipeMemo: "",
   note: " おかわりした ",
 };
 
@@ -27,7 +26,9 @@ const suggestion = (over: Partial<MealSuggestion> = {}): MealSuggestion => ({
   name: "肉じゃが",
   lastEatenOn: "2026-08-28",
   mataTabetai: true,
-  recipeSource: { type: "none" },
+  recipeUrl: null,
+  shopUrl: null,
+  recipeMemo: null,
   tags: [],
   photo: null,
   ...over,
@@ -63,15 +64,6 @@ describe("toMealType", () => {
   });
 });
 
-describe("toSourceKind", () => {
-  it("知っている選択肢だけ通し、それ以外は「なし」にする", () => {
-    expect(toSourceKind("url")).toBe("url");
-    expect(toSourceKind("text")).toBe("text");
-    expect(toSourceKind("")).toBe("none");
-    expect(toSourceKind("ogp")).toBe("none");
-  });
-});
-
 describe("toCreateMealBody", () => {
   it("前後の空白を落とし、空のメモは null にする", () => {
     const body = toCreateMealBody(filled);
@@ -80,21 +72,32 @@ describe("toCreateMealBody", () => {
     expect(toCreateMealBody({ ...filled, note: "  " }).note).toBeNull();
   });
 
-  it("レシピの出所は sourceKind が決める（選んでいない側の入力は載らない）", () => {
-    const form = { ...filled, sourceKind: "url" as const, url: " https://example.com/a ", recipeText: "書きかけ" };
-    expect(toCreateMealBody(form).recipeSource).toEqual({ type: "url", url: "https://example.com/a" });
-    expect(toCreateMealBody({ ...form, sourceKind: "text" }).recipeSource).toEqual({
-      type: "text",
-      text: "書きかけ",
+  it("リンク 2 種と作り方メモは併記できる（排他ではない）", () => {
+    const body = toCreateMealBody({
+      ...filled,
+      recipeUrl: " https://example.com/a ",
+      shopUrl: "https://shop.example.com/b",
+      recipeMemo: " みりん多め ",
     });
-    expect(toCreateMealBody({ ...form, sourceKind: "none" }).recipeSource).toEqual({ type: "none" });
+    expect(body.recipeUrl).toBe("https://example.com/a");
+    expect(body.shopUrl).toBe("https://shop.example.com/b");
+    expect(body.recipeMemo).toBe("みりん多め");
+  });
+
+  it("空のリンク・作り方メモは null にする", () => {
+    const body = toCreateMealBody({ ...filled, recipeUrl: "  ", shopUrl: "", recipeMemo: " " });
+    expect(body.recipeUrl).toBeNull();
+    expect(body.shopUrl).toBeNull();
+    expect(body.recipeMemo).toBeNull();
   });
 });
 
 describe("applySuggestion", () => {
-  it("料理名・タグ・リンクを引き継ぐ", () => {
+  it("料理名・タグ・リンク 2 種・作り方メモを引き継ぐ", () => {
     const form = applySuggestion(emptyMealForm("2026-09-02"), suggestion({
-      recipeSource: { type: "url", url: "https://example.com/recipe" },
+      recipeUrl: "https://example.com/recipe",
+      shopUrl: "https://shop.example.com/item",
+      recipeMemo: "みりん多め",
       tags: [
         { id: "t1", name: "じゃがいも" },
         { id: "t2", name: "牛肉" },
@@ -102,8 +105,9 @@ describe("applySuggestion", () => {
     }));
     expect(form.name).toBe("肉じゃが");
     expect(form.tags).toBe("じゃがいも 牛肉");
-    expect(form.sourceKind).toBe("url");
-    expect(form.url).toBe("https://example.com/recipe");
+    expect(form.recipeUrl).toBe("https://example.com/recipe");
+    expect(form.shopUrl).toBe("https://shop.example.com/item");
+    expect(form.recipeMemo).toBe("みりん多め");
   });
 
   it("食べた日・タイミング・メモは今回の食事のものなので引き継がない", () => {
@@ -113,12 +117,17 @@ describe("applySuggestion", () => {
     expect(form.note).toBe(" おかわりした ");
   });
 
-  it("前回のリンクを選び直したら、書きかけの逆側は残さない", () => {
-    const before = { ...filled, sourceKind: "text" as const, recipeText: "前の自作レシピ", url: "https://old.example" };
-    const after = applySuggestion(before, suggestion({ recipeSource: { type: "none" } }));
-    expect(after.sourceKind).toBe("none");
-    expect(after.recipeText).toBe("");
-    expect(after.url).toBe("");
+  it("リンクの無い料理を選んだら、前の料理の書きかけは残さない（3 項目とも空になる）", () => {
+    const before = {
+      ...filled,
+      recipeUrl: "https://old.example",
+      shopUrl: "https://old-shop.example",
+      recipeMemo: "前の作り方メモ",
+    };
+    const after = applySuggestion(before, suggestion());
+    expect(after.recipeUrl).toBe("");
+    expect(after.shopUrl).toBe("");
+    expect(after.recipeMemo).toBe("");
   });
 
   it("タグの無い料理を選んだらタグ欄も空になる（前の入力が混ざらない）", () => {

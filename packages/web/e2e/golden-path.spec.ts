@@ -6,7 +6,7 @@ import { enableVirtualAuthenticator } from "./helpers/webauthn";
 // 配線の事実: 初回登録（パスキー作成 → users/spaces/space_members/credentials/sessions）→
 // リロードでセッションが残る → 投稿作成（meals/tags/meal_tags + 写真 2 枚: 縮小 → R2 →
 // proxy 配信・304）→ 写真 1 枚削除 → またたべたいトグル → リロードで投稿・トグル・写真が残る →
-// サジェスト（料理名ごとの直近 1 件・タグ AND 絞り込み・前回内容の引き継ぎ）→
+// サジェスト（料理名ごとの直近 1 件・タグ AND 絞り込み・リンク 2 種と作り方メモの引き継ぎ）→
 // 削除（R2 も消える）→ 招待リンク発行 → 別ブラウザが招待から登録 →
 // メンバーに並ぶ → ログアウト → パスキーでログインし直す。ドメインの意味はユニットに譲る。
 test("register → reload → meal record with photos → suggestion → invite → second member → logout → login", async ({ page, browser, baseURL }) => {
@@ -33,6 +33,10 @@ test("register → reload → meal record with photos → suggestion → invite 
   // setInputFiles の PNG をクライアントが canvas で JPEG に縮小してから multipart で送る
   await page.getByLabel("料理名").fill("肉じゃが");
   await page.getByLabel("タグ").fill("じゃがいも 牛肉");
+  // リンク 2 種と作り方メモは併記できる（排他をやめた 3 項目 — ADR-007 §1）
+  await page.getByLabel("レシピ URL").fill("https://example.com/recipe/1");
+  await page.getByLabel("お店・商品 URL").fill("https://shop.example.com/item/1");
+  await page.getByLabel("作り方メモ").fill("みりんを少し多めに");
   await page.getByLabel("写真", { exact: true }).setInputFiles([
     { name: "one.png", mimeType: "image/png", buffer: PNG_8x8 },
     { name: "two.png", mimeType: "image/png", buffer: PNG_8x8 },
@@ -86,6 +90,17 @@ test("register → reload → meal record with photos → suggestion → invite 
     "true",
   );
   await expect(feed.locator("img[src*='/photos/']")).toHaveCount(1);
+  // リンク 2 種と作り方メモも残る（recipe_url / shop_url は additive migration で足した列 — ADR-007 §2）
+  await expect(feed.getByRole("link", { name: /^レシピ:/ })).toHaveAttribute(
+    "href",
+    "https://example.com/recipe/1",
+  );
+  await expect(feed.getByRole("link", { name: /^お店・商品:/ })).toHaveAttribute(
+    "href",
+    "https://shop.example.com/item/1",
+  );
+  await feed.locator("summary", { hasText: "作り方メモ" }).click();
+  await expect(feed.getByText("みりんを少し多めに")).toBeVisible();
 
   // 2 品目（タグは別）。サジェストの絞り込みが本当に絞っているかは 2 品ないと見えない
   await page.getByLabel("料理名").fill("カレー");
@@ -99,7 +114,7 @@ test("register → reload → meal record with photos → suggestion → invite 
   const curry = form.getByRole("button", { name: /カレー/ });
   await expect(nikujaga).toBeVisible();
   await expect(curry).toBeVisible();
-  await form.locator("summary").click();
+  await form.locator("summary", { hasText: "タグで絞り込む" }).click();
   await form.getByRole("button", { name: "じゃがいも" }).click();
   await expect(curry).toHaveCount(0);
   await expect(nikujaga).toBeVisible();
@@ -111,6 +126,9 @@ test("register → reload → meal record with photos → suggestion → invite 
   await nikujaga.click();
   await expect(page.getByLabel("料理名")).toHaveValue("肉じゃが");
   await expect(page.getByLabel("タグ")).toHaveValue("じゃがいも 牛肉");
+  await expect(page.getByLabel("レシピ URL")).toHaveValue("https://example.com/recipe/1");
+  await expect(page.getByLabel("お店・商品 URL")).toHaveValue("https://shop.example.com/item/1");
+  await expect(page.getByLabel("作り方メモ")).toHaveValue("みりんを少し多めに");
   await expect(form.getByText(/「肉じゃが」の前回の内容を引き継ぎました/)).toBeVisible();
 
   // ふりかえり: またたべたい一覧（既定）→ ぜんぶの記録 + タグ AND → 料理名の期間集計、の配線。
@@ -121,7 +139,7 @@ test("register → reload → meal record with photos → suggestion → invite 
   await expect(records.getByText("カレー", { exact: true })).toHaveCount(0);
   await records.getByRole("button", { name: "ぜんぶの記録" }).click();
   await expect(records.getByText("カレー", { exact: true })).toBeVisible();
-  await records.locator("summary").click();
+  await records.locator("summary", { hasText: "タグで絞り込む" }).click();
   await records.getByRole("button", { name: "にんじん" }).click();
   await expect(records.getByText("肉じゃが", { exact: true })).toHaveCount(0);
   await expect(records.getByText("カレー", { exact: true })).toBeVisible();

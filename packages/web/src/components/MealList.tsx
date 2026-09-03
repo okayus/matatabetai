@@ -165,15 +165,24 @@ function MealItem({
           ))}
         </div>
       )}
-      {meal.recipeSource.type === "url" && (
-        <a href={meal.recipeSource.url} target="_blank" rel="noreferrer">
-          {linkLabel(meal.recipeSource.url)}
-        </a>
+      {(meal.recipeUrl || meal.shopUrl) && (
+        <div className="row">
+          {meal.recipeUrl && (
+            <a href={meal.recipeUrl} target="_blank" rel="noreferrer">
+              レシピ: {linkLabel(meal.recipeUrl)}
+            </a>
+          )}
+          {meal.shopUrl && (
+            <a href={meal.shopUrl} target="_blank" rel="noreferrer">
+              お店・商品: {linkLabel(meal.shopUrl)}
+            </a>
+          )}
+        </div>
       )}
-      {meal.recipeSource.type === "text" && (
+      {meal.recipeMemo && (
         <details>
-          <summary>レシピ</summary>
-          <p className="pre-wrap">{meal.recipeSource.text}</p>
+          <summary>作り方メモ</summary>
+          <p className="pre-wrap">{meal.recipeMemo}</p>
         </details>
       )}
       {meal.note && <p className="muted pre-wrap">{meal.note}</p>}
@@ -198,7 +207,8 @@ function MealItem({
   );
 }
 
-// リンクはドメイン名で示す（URL 全文はモバイルで長すぎる）
+// リンクはドメイン名で示す（URL 全文はモバイルで長すぎる）。
+// PR ② の OGP カードはこの <a> の上に重ねる — 取得できなくてもリンクとしては常に働く（ADR-007 §5）
 function linkLabel(url: string): string {
   try {
     return new URL(url).hostname;

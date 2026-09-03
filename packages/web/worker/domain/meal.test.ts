@@ -5,12 +5,10 @@ import {
   MealListQuery,
   MealStatsQuery,
   TagName,
+  frozenRecipeColumns,
   isHttpUrl,
   normalizeName,
-  recipeSourceFromColumns,
-  recipeSourceToColumns,
   uniqueTagNames,
-  type RecipeSource,
 } from "./meal";
 
 describe("normalizeName", () => {
@@ -46,20 +44,22 @@ describe("isHttpUrl", () => {
   });
 });
 
-describe("RecipeSource の平坦化", () => {
-  const cases: RecipeSource[] = [
-    { type: "url", url: "https://example.com/r/1" },
-    { type: "text", text: "じゃがいもを茹でる\n潰す" },
-    { type: "none" },
-  ];
-  it.each(cases)("round-trips %j", (rs) => {
-    const cols = recipeSourceToColumns(rs);
-    expect(recipeSourceFromColumns(cols.recipeSourceType, cols.url, cols.recipeText)).toEqual(rs);
+// DB に凍結して残した meals_recipe_source_check と同じ判定（ADR-007 §2）。
+// 導出した値がこれを満たすことが additive migration の前提 — 破れると INSERT が CHECK で落ちる
+function satisfiesFrozenCheck(type: string, url: string | null, recipeText: string | null): boolean {
+  if (type === "url") return url !== null && recipeText === null;
+  if (type === "text") return recipeText !== null && url === null;
+  return url === null && recipeText === null;
+}
+
+describe("frozenRecipeColumns", () => {
+  it("作り方メモの有無で type が決まり、url は常に NULL（リンクは recipe_url / shop_url が持つ）", () => {
+    expect(frozenRecipeColumns(null)).toEqual({ recipeSourceType: "none", url: null });
+    expect(frozenRecipeColumns("鍋で煮る")).toEqual({ recipeSourceType: "text", url: null });
   });
-  it("列が欠けた不整合行は none に落ちる（CHECK があるので通常は来ない）", () => {
-    expect(recipeSourceFromColumns("url", null, null)).toEqual({ type: "none" });
-    expect(recipeSourceFromColumns("text", "https://x", null)).toEqual({ type: "none" });
-    expect(recipeSourceFromColumns("garbage", "https://x", "y")).toEqual({ type: "none" });
+  it.each([null, "鍋で煮る"])("導出した凍結列は凍結した CHECK を満たす（recipeMemo = %j）", (memo) => {
+    const { recipeSourceType, url } = frozenRecipeColumns(memo);
+    expect(satisfiesFrozenCheck(recipeSourceType, url, memo)).toBe(true);
   });
 });
 
@@ -109,15 +109,20 @@ describe("CreateMealInput", () => {
     name: "肉じゃが",
     eatenOn: "2026-09-01",
     mealType: null,
-    recipeSource: { type: "none" },
+    recipeUrl: null,
+    shopUrl: null,
+    recipeMemo: null,
     note: null,
     tags: [],
   };
   it("最小の投稿が通り、省略可能な列は null になる", () => {
-    const r = CreateMealInput.safeParse({ name: "肉じゃが", eatenOn: "2026-09-01", recipeSource: { type: "none" } });
+    const r = CreateMealInput.safeParse({ name: "肉じゃが", eatenOn: "2026-09-01" });
     expect(r.success).toBe(true);
     if (r.success) {
       expect(r.data.mealType).toBeNull();
+      expect(r.data.recipeUrl).toBeNull();
+      expect(r.data.shopUrl).toBeNull();
+      expect(r.data.recipeMemo).toBeNull();
       expect(r.data.note).toBeNull();
       expect(r.data.tags).toEqual([]);
     }
@@ -131,15 +136,33 @@ describe("CreateMealInput", () => {
     expect(CreateMealInput.safeParse({ ...base, note: "うまい\nまた作る" }).success).toBe(true);
     expect(CreateMealInput.safeParse({ ...base, note: `a${String.fromCharCode(7)}b` }).success).toBe(false);
   });
-  it("recipeSource url は http(s) 以外を拒む", () => {
-    expect(
-      CreateMealInput.safeParse({ ...base, recipeSource: { type: "url", url: "javascript:alert(1)" } })
-        .success,
-    ).toBe(false);
-    expect(
-      CreateMealInput.safeParse({ ...base, recipeSource: { type: "url", url: "https://example.com" } })
-        .success,
-    ).toBe(true);
+  it("レシピ URL・お店 URL・作り方メモは併用できる（排他ではない）", () => {
+    const r = CreateMealInput.safeParse({
+      ...base,
+      recipeUrl: "https://example.com/recipe/1",
+      shopUrl: "https://shop.example.com/item",
+      recipeMemo: "みりんを少し多めに\n煮汁は残す",
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.recipeUrl).toBe("https://example.com/recipe/1");
+      expect(r.data.shopUrl).toBe("https://shop.example.com/item");
+      expect(r.data.recipeMemo).toBe("みりんを少し多めに\n煮汁は残す");
+    }
+  });
+  it("どちらの URL 欄も http(s) 以外を拒む", () => {
+    expect(CreateMealInput.safeParse({ ...base, recipeUrl: "javascript:alert(1)" }).success).toBe(false);
+    expect(CreateMealInput.safeParse({ ...base, shopUrl: "javascript:alert(1)" }).success).toBe(false);
+    expect(CreateMealInput.safeParse({ ...base, recipeUrl: "https://example.com" }).success).toBe(true);
+  });
+  it("空文字の URL 欄・作り方メモは「なし」になる（未入力と同じ）", () => {
+    const r = CreateMealInput.safeParse({ ...base, recipeUrl: "  ", shopUrl: "", recipeMemo: " " });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.recipeUrl).toBeNull();
+      expect(r.data.shopUrl).toBeNull();
+      expect(r.data.recipeMemo).toBeNull();
+    }
   });
   it("タグは 20 個まで", () => {
     const tags = Array.from({ length: 21 }, (_, i) => `tag${i}`);
