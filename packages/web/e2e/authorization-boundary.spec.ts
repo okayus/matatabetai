@@ -74,6 +74,13 @@ test("a member of space A gets 404 for space B (API and UI)", async ({ page, bas
   expect(crossPhoto.status()).toBe(404);
   expect(await crossPhoto.json()).toEqual({ error: { type: "not_found" } });
 
+  // URL プレビューの画像も同じ連鎖（meal の space 一致で切れる。R2 には触れない）
+  const crossPreview = await page.request.get(
+    `/api/spaces/${mine}/meals/${OTHER_MEAL_ID}/link-previews/recipe/image`,
+  );
+  expect(crossPreview.status()).toBe(404);
+  expect(await crossPreview.json()).toEqual({ error: { type: "not_found" } });
+
   const crossUpload = await page.request.post(
     `/api/spaces/${OTHER_SPACE_ID}/meals/${OTHER_MEAL_ID}/photos`,
     { headers: origin },

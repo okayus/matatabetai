@@ -15,7 +15,7 @@
     "db:migrate": "wrangler d1 migrations apply matatabetai --local",
     "db:migrate:prod": "wrangler d1 migrations apply matatabetai --remote",
     "e2e": "playwright test",
-    "e2e:server": "pnpm build && wrangler dev --config dist/matatabetai/wrangler.json --persist-to .wrangler/state --ip 127.0.0.1 --port 5183 --var ORIGIN:http://localhost:5183 --var RP_ID:localhost --var SESSION_SECRET:e2e-secret-0123456789abcdef0123456789abcdef --var INITIAL_REGISTRATION_TOKEN:e2e-initial-token"
+    "e2e:server": "pnpm build && mkdir -p dist/client/e2e-fixture && cp e2e/fixtures/site/* dist/client/e2e-fixture/ && wrangler dev --config dist/matatabetai/wrangler.json --persist-to .wrangler/state --ip 127.0.0.1 --port 5183 --var ORIGIN:http://localhost:5183 --var RP_ID:localhost --var SESSION_SECRET:e2e-secret-0123456789abcdef0123456789abcdef --var INITIAL_REGISTRATION_TOKEN:e2e-initial-token"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.3",

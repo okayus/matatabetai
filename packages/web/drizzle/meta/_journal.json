@@ -36,6 +36,13 @@
       "when": 1788395953032,
       "tag": "0004_recipe_shop_urls",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788404993668,
+      "tag": "0005_meal_link_previews",
+      "breakpoints": true
     }
   ]
 }

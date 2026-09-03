@@ -8,6 +8,7 @@ import { sessionMiddleware } from "./middleware/session";
 import { spaceMiddleware } from "./middleware/space";
 import { authRoutes } from "./routes/auth";
 import { inviteAcceptRoutes } from "./routes/invite-accept";
+import { mealLinkPreviewRoutes } from "./routes/meal-link-previews";
 import { mealPhotoRoutes } from "./routes/meal-photos";
 import { mealRoutes } from "./routes/meals";
 import { spaceDetailRoutes } from "./routes/space-detail";
@@ -46,6 +47,7 @@ space.route("/", spaceDetailRoutes);
 space.route("/invites", spaceInviteRoutes);
 space.route("/meals", mealRoutes);
 space.route("/meals/:mealId/photos", mealPhotoRoutes);
+space.route("/meals/:mealId/link-previews", mealLinkPreviewRoutes);
 space.route("/tags", tagRoutes);
 protectedApi.route("/spaces/:spaceId", space);
 

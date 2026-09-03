@@ -190,6 +190,41 @@ export const mealPhotos = sqliteTable(
   (t) => [index("meal_photos_meal_id_idx").on(t.mealId)],
 );
 
+// URL プレビュー（ADR-007 §3-4）。meals の CASCADE 子で、投稿時点のスナップショットを持つ。
+// 行は投稿と同じ batch で status='pending' として作り、waitUntil の取得が 'ok' / 'failed' に更新する。
+// og:image は hotlink せず Worker が取り込んで private R2（ogp/<spaceId>/<mealId>/<kind>）に置き、
+// この列はそのキーだけを持つ。表示時に外部へ出ないので、リンク切れでもカードは残る。
+// meal_type と違って CHECK を付けてよい: この表は CASCADE の子を持たないので、
+// 値が増えて table rebuild になっても消えるものが無い（meals とはそこが違う）。
+export const mealLinkPreviews = sqliteTable(
+  "meal_link_previews",
+  {
+    mealId: text("meal_id")
+      .notNull()
+      .references(() => meals.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["recipe", "shop"] }).notNull(),
+    // 取得した時点の URL（meals 側が編集されても、このカードが何を指していたかは動かない）
+    url: text("url").notNull(),
+    status: text("status", { enum: ["pending", "ok", "failed"] }).notNull(),
+    title: text("title"),
+    description: text("description"),
+    siteName: text("site_name"),
+    imageR2Key: text("image_r2_key"),
+    // 取得が終わった時刻（pending の間は null）
+    fetchedAt: text("fetched_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [
+    // 1 投稿につき kind ごとに 1 行。一覧は WHERE meal_id IN (…) なので PK の先頭列で引ける
+    primaryKey({ columns: [t.mealId, t.kind] }),
+    check("meal_link_previews_kind_check", sql`${t.kind} IN ('recipe', 'shop')`),
+    check(
+      "meal_link_previews_status_check",
+      sql`${t.status} IN ('pending', 'ok', 'failed')`,
+    ),
+  ],
+);
+
 // 食材タグ。スペース単位で name_normalized が一意（表示名は最初に登録した表記が勝つ）
 export const tags = sqliteTable(
   "tags",

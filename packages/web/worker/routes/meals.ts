@@ -11,6 +11,7 @@ import {
 } from "../domain/meal";
 import type { SpaceEnv } from "../env";
 import { createMeal, deleteMeal, setMataTabetai } from "../meals/commands";
+import { runLinkPreviewJobs } from "../meals/link-previews";
 import { aggregateMealNames, listMeals, listSuggestions, type MealSummary } from "../meals/queries";
 
 function fail(c: Context<SpaceEnv>, error: AppError) {
@@ -51,6 +52,19 @@ export const mealRoutes = new Hono<SpaceEnv>()
     if (parsed.isErr()) return fail(c, parsed.error);
     const now = new Date().toISOString();
     const created = await createMeal(c.env.DB, c.var.spaceId, c.var.userId, parsed.value, now);
+    // URL プレビューは応答を返した後に取りに行く（ADR-007 §3）。投稿を外部サイトの
+    // 応答待ちでブロックしない。取れなければ行は failed のまま = プレーンリンク
+    if (created.previewTargets.length > 0) {
+      c.executionCtx.waitUntil(
+        runLinkPreviewJobs(
+          c.env.DB,
+          c.env.PHOTOS_BUCKET,
+          c.var.spaceId,
+          created.id,
+          created.previewTargets,
+        ),
+      );
+    }
     const body: MealSummary = {
       id: created.id,
       name: parsed.value.name,
@@ -63,6 +77,8 @@ export const mealRoutes = new Hono<SpaceEnv>()
       mataTabetai: false,
       tags: created.tags,
       photos: [],
+      // この時点ではどれも取得中。カードは次に一覧を読んだときに出る
+      previews: created.previewTargets.map((t) => ({ kind: t.kind, status: "pending" as const })),
       createdBy: c.var.userId,
       createdByName: c.var.displayName,
       createdAt: now,
