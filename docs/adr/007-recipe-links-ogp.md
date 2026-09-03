@@ -7,7 +7,7 @@
 
 requirements 機能要件 3〜5 は「レシピ URL / 自作レシピ本文 / なし」の排他 1 択（`RecipeSource` DU、DB は ADR-003 §2 の CHECK `meals_recipe_source_check`）で、UI もドロップダウン切替だった。しかし実際の記録は「レシピ URL を貼りつつ自分のアレンジをメモしたい」「レシピ URL とお店・商品の URL は別物」で、排他が実態に合わない。Phase 3 の URL プレビュー（OGP）に着手するにあたり、プレビューが付く対象＝フィールド構造を先に確定する。
 
-将来の「レシピ本文の取り込み」（JSON-LD `schema.org/Recipe` の材料・手順 → 作り方メモの下書き）はこの ADR に含めない。著作権上、材料・分量・手順はアイデアで保護対象外だが、説明文の創作的表現・写真は著作物になり得るし、対象サイトの利用規約の確認（サンドボックスの egress 制限で取得不可 — 人間がホストのブラウザで原文を読む）が先。Readability（html2md 方式）の全文抽出は jsdom 前提で Worker に載らない点でも本命にせず、調査後に別 ADR（008 候補）で決める。
+将来の「レシピ本文の取り込み」（JSON-LD `schema.org/Recipe` の材料・手順 → 作り方メモの下書き）はこの ADR に含めない。著作権上、材料・分量・手順はアイデアで保護対象外だが、説明文の創作的表現・写真は著作物になり得るし、対象サイトの利用規約の確認（サンドボックスの egress 制限で取得不可 — 人間がホストのブラウザで原文を読む）が先。Readability（html2md 方式）の全文抽出は jsdom 前提で Worker に載らない点でも本命にせず、調査後に別 ADR で決める（番号は起草時に採る）。
 
 ## 決定
 
@@ -57,4 +57,4 @@ URL は常に `<a>`（現行の `linkLabel` 表示）として機能し、`ok` �
 - **rebuild で CHECK を外す「綺麗な」migration** — バックアップ整備前に CASCADE 事故リスクを取る理由がない。凍結列の掃除は Phase 4 へ
 - **入力時プレビュー（貼った瞬間にカード）** — 第一弾に含めない。別表 + status の設計はプレビュー用 endpoint を後から足しても壊れない
 - **URL の kind 配列（複数 URL の汎用化）** — 現要件に無い（YAGNI）。列 2 本で足りる
-- **Readability（jsdom / linkedom）での本文抽出・ドメイン別抽出サーバー** — html2md は Node + jsdom 前提で Worker に載らず、全文複製は権利・規約リスクが高い。主要サイトが埋め込む JSON-LD（schema.org/Recipe）の調査を先行し ADR-008 候補へ
+- **Readability（jsdom / linkedom）での本文抽出・ドメイン別抽出サーバー** — html2md は Node + jsdom 前提で Worker に載らず、全文複製は権利・規約リスクが高い。主要サイトが埋め込む JSON-LD（schema.org/Recipe）の調査を先行し別 ADR へ
