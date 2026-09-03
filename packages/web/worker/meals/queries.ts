@@ -252,6 +252,36 @@ export async function aggregateMealNames(
   return rows.map(({ everMataTabetai, ...rest }) => ({ ...rest, mataTabetai: everMataTabetai > 0 }));
 }
 
+// 食材タグの期間集計（タグクラウド）。料理名の集計と同じ期間・同じ並びの規則で、
+// 単位だけが meals から meal_tags に変わる。表示名は group by しているタグ行そのものの列なので
+// bare column の非決定は起きない（ADR-005 §2 の心配は「同着の別行から拾う」形にだけ当てはまる）。
+// 大きさは回数で決まるので、クラウドに載らない裾は 40 件で切る
+export const TAG_STATS_LIMIT = 40;
+
+export type MealTagStat = { id: string; name: string; count: number };
+
+export async function aggregateMealTags(
+  db: Db,
+  spaceId: string,
+  range: { from?: string | undefined; to?: string | undefined },
+): Promise<MealTagStat[]> {
+  return db
+    .select({ id: tags.id, name: tags.name, count: sql<number>`count(*)`.as("count") })
+    .from(mealTags)
+    .innerJoin(tags, eq(mealTags.tagId, tags.id))
+    .innerJoin(meals, eq(mealTags.mealId, meals.id))
+    .where(
+      and(
+        eq(meals.spaceId, spaceId),
+        range.from === undefined ? undefined : gte(meals.eatenOn, range.from),
+        range.to === undefined ? undefined : lte(meals.eatenOn, range.to),
+      ),
+    )
+    .groupBy(tags.id)
+    .orderBy(sql`count(*) desc`, asc(tags.nameNormalized))
+    .limit(TAG_STATS_LIMIT);
+}
+
 // サジェストの絞り込み候補。よく使う順に返す（家族が最初に触るタグを前に出す）。
 // 親 meal を消した後も tags 行は残るので、meal_tags と inner join して使われているものだけ出す
 export const TAG_LIST_LIMIT = 50;

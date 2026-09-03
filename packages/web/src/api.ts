@@ -89,6 +89,8 @@ export type MealNameStat = {
   lastEatenOn: string;
   mataTabetai: boolean;
 };
+// 食材タグの期間集計（タグクラウド）。多い順に上位だけ返る
+export type MealTagStat = { id: string; name: string; count: number };
 // 投稿フォームのサジェスト（requirements 8）。料理名ごとに直近 1 件、選ぶと前回のリンク・作り方メモ・タグを引き継ぐ
 export type MealSuggestion = MealLinks & {
   mealId: string;
@@ -219,6 +221,17 @@ export const listMealStats = (
   if (range.to) params.set("to", range.to);
   const query = params.toString();
   return api<MealNameStat[]>(`/api/spaces/${spaceId}/meals/stats${query ? `?${query}` : ""}`);
+};
+// タグクラウド。期間の読みは listMealStats と同じ（プリセットが同じ範囲を両方に渡す）
+export const listMealTagStats = (
+  spaceId: string,
+  range: { from?: string | undefined; to?: string | undefined } = {},
+) => {
+  const params = new URLSearchParams();
+  if (range.from) params.set("from", range.from);
+  if (range.to) params.set("to", range.to);
+  const query = params.toString();
+  return api<MealTagStat[]>(`/api/spaces/${spaceId}/meals/tag-stats${query ? `?${query}` : ""}`);
 };
 export const createMeal = (spaceId: string, body: CreateMealBody) =>
   post<Meal>(`/api/spaces/${spaceId}/meals`, body);

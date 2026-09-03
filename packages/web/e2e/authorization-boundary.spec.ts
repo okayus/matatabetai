@@ -60,6 +60,10 @@ test("a member of space A gets 404 for space B (API and UI)", async ({ page, bas
   expect(otherStats.status()).toBe(404);
   expect(await otherStats.json()).toEqual({ error: { type: "not_found" } });
   expect(await (await page.request.get(`/api/spaces/${mine}/meals/stats`)).json()).toEqual([]);
+  const otherTagStats = await page.request.get(`/api/spaces/${OTHER_SPACE_ID}/meals/tag-stats`);
+  expect(otherTagStats.status()).toBe(404);
+  expect(await otherTagStats.json()).toEqual({ error: { type: "not_found" } });
+  expect(await (await page.request.get(`/api/spaces/${mine}/meals/tag-stats`)).json()).toEqual([]);
   expect(await (await page.request.get(`/api/spaces/${mine}/meals?mataTabetai=1`)).json()).toEqual([]);
   expect(
     await (

@@ -37,3 +37,27 @@ export function todayLocalDate(): string {
   const dd = String(now.getDate()).padStart(2, "0");
   return `${now.getFullYear()}-${mm}-${dd}`;
 }
+
+const monthOnly = new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "long" });
+
+// 月プリセットの見出し（2026年9月）
+export function formatMonth(ymd: string): string {
+  const [y = 0, m = 1] = ymd.split("-").map(Number);
+  return monthOnly.format(new Date(y, m - 1, 1));
+}
+
+const monthDayWithWeekday = new Intl.DateTimeFormat("ja-JP", {
+  month: "long",
+  day: "numeric",
+  weekday: "short",
+});
+
+// 週プリセットの見出し。年は先頭に 1 度だけ出し、年をまたぐ週のときだけ後ろにも添える
+export function formatDateRange(from: string, to: string): string {
+  const [ty = 0, tm = 1, td = 1] = to.split("-").map(Number);
+  const tail =
+    from.slice(0, 4) === to.slice(0, 4)
+      ? monthDayWithWeekday.format(new Date(ty, tm - 1, td))
+      : formatEatenOn(to);
+  return `${formatEatenOn(from)}〜${tail}`;
+}

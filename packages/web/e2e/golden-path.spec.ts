@@ -144,14 +144,29 @@ test("register → reload → meal record with photos → suggestion → invite 
   await expect(records.getByText("肉じゃが", { exact: true })).toHaveCount(0);
   await expect(records.getByText("カレー", { exact: true })).toBeVisible();
 
-  // 集計: 2 品が 1 回ずつ数えられ、期間を未来に絞ると 0 件、外すと戻る（BETWEEN の配線）
-  const statsSection = page.getByRole("region", { name: "よく食べているもの" });
+  // 集計: 既定の今月に 2 品が 1 回ずつ数えられ、同じ期間のタグがクラウドに出る。
+  // ← で先月に移ると 0 件、→ で戻る（プリセットが from / to を組んで両方の集計に渡している配線）
+  const statsSection = page.getByRole("region", { name: "食べたもののまとめ" });
   await expect(statsSection.getByText("肉じゃが", { exact: true })).toBeVisible();
-  await expect(statsSection.getByText("1 回")).toHaveCount(2);
+  await expect(statsSection.getByText("1 回", { exact: true })).toHaveCount(2);
+  await expect(statsSection.getByRole("button", { name: /じゃがいも/ })).toBeVisible();
+  await statsSection.getByRole("button", { name: "前の月" }).click();
+  await expect(statsSection.getByText("この期間の記録はまだありません")).toBeVisible();
+  await statsSection.getByRole("button", { name: "次の月" }).click();
+  await expect(statsSection.getByText("カレー", { exact: true })).toBeVisible();
+  // 日付を直に渡す口も残っている（プリセットに置き換えたのは既定の操作だけ）
+  await statsSection.getByRole("button", { name: "日付を指定" }).click();
   await statsSection.getByLabel("いつから").fill("2100-01-01");
   await expect(statsSection.getByText("この期間の記録はまだありません")).toBeVisible();
-  await statsSection.getByLabel("いつから").fill("");
-  await expect(statsSection.getByText("カレー", { exact: true })).toBeVisible();
+  await statsSection.getByRole("button", { name: "今月" }).click();
+
+  // クラウドのタグをタップすると、上の「記録をさがす」がその食材だけに絞り直る。
+  // またたべたい の枠は外れるので、♡ の付いていないカレーにも届く
+  const scope = records.getByRole("group", { name: "どの記録を見るか" });
+  await scope.getByRole("button", { name: "またたべたい" }).click();
+  await expect(records.getByText("この絞り込みに合う記録はまだありません")).toBeVisible();
+  await statsSection.getByRole("button", { name: /にんじん/ }).click();
+  await expect(records.getByText("カレー", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "ホーム" }).click();
   await expect(feed.getByText("カレー", { exact: true })).toBeVisible();
 

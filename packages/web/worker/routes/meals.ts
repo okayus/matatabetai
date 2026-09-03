@@ -12,7 +12,13 @@ import {
 import type { SpaceEnv } from "../env";
 import { createMeal, deleteMeal, setMataTabetai } from "../meals/commands";
 import { runLinkPreviewJobs } from "../meals/link-previews";
-import { aggregateMealNames, listMeals, listSuggestions, type MealSummary } from "../meals/queries";
+import {
+  aggregateMealNames,
+  aggregateMealTags,
+  listMeals,
+  listSuggestions,
+  type MealSummary,
+} from "../meals/queries";
 
 function fail(c: Context<SpaceEnv>, error: AppError) {
   return c.json(errorBody(error), errorStatus(error));
@@ -46,6 +52,12 @@ export const mealRoutes = new Hono<SpaceEnv>()
     const q = parseWith(MealStatsQuery, { from: c.req.query("from"), to: c.req.query("to") });
     if (q.isErr()) return fail(c, q.error);
     return c.json(await aggregateMealNames(drizzle(c.env.DB), c.var.spaceId, q.value));
+  })
+  // 食材タグの期間集計（タグクラウド）。単位が料理名からタグに変わるだけで、期間の読みは /stats と同じ
+  .get("/tag-stats", async (c) => {
+    const q = parseWith(MealStatsQuery, { from: c.req.query("from"), to: c.req.query("to") });
+    if (q.isErr()) return fail(c, q.error);
+    return c.json(await aggregateMealTags(drizzle(c.env.DB), c.var.spaceId, q.value));
   })
   .post("/", async (c) => {
     const parsed = parseWith(CreateMealInput, await c.req.json().catch(() => undefined));
