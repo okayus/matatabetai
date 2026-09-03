@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { meals, tags } from "../db/schema";
+import { linkPreviewTargets, type LinkPreviewTarget } from "../domain/link-preview";
 import {
   frozenRecipeColumns,
   normalizeName,
@@ -10,20 +11,23 @@ import {
 } from "../domain/meal";
 import type { UserId } from "../domain/auth";
 import type { SpaceId } from "../domain/space";
+import { linkPreviewImageKeysOfMeal, pendingPreviewStatements } from "./link-previews";
 import { photoKeysOfMeal } from "./photos";
 import type { MealTagSummary } from "./queries";
 
-// タグの upsert → meal → meal_tags を 1 つの batch（原子的）で書く。tag id の解決は
-// INSERT … SELECT で SQL 側に閉じ、同名タグの同時投稿は ON CONFLICT DO NOTHING が吸収する。
+// タグの upsert → meal → meal_tags → プレビューの pending 行 を 1 つの batch（原子的）で書く。
+// tag id の解決は INSERT … SELECT で SQL 側に閉じ、同名タグの同時投稿は ON CONFLICT DO NOTHING が
+// 吸収する。プレビューの取得そのものは応答後（waitUntil）で、ここでは行を立てるだけ（ADR-007 §4）
 export async function createMeal(
   d1: D1Database,
   spaceId: SpaceId,
   userId: UserId,
   input: CreateMealInput,
   now: string,
-): Promise<{ id: string; tags: MealTagSummary[] }> {
+): Promise<{ id: string; tags: MealTagSummary[]; previewTargets: LinkPreviewTarget[] }> {
   const id = crypto.randomUUID();
   const tagNames = uniqueTagNames(input.tags);
+  const previewTargets = linkPreviewTargets(input);
   // recipe_source_type / url は凍結列。3 項目とは別に、旧 CHECK を満たす値を導出して書く
   const frozen = frozenRecipeColumns(input.recipeMemo);
   await d1.batch([
@@ -63,8 +67,9 @@ export async function createMeal(
         )
         .bind(id, spaceId, normalizeName(name)),
     ),
+    ...pendingPreviewStatements(d1, id, previewTargets, now),
   ]);
-  return { id, tags: await resolveTags(d1, spaceId, tagNames) };
+  return { id, tags: await resolveTags(d1, spaceId, tagNames), previewTargets };
 }
 
 // レスポンス用に入力順のまま id を引き直す
@@ -98,18 +103,24 @@ export async function setMataTabetai(
   return updated.length > 0;
 }
 
-// meal_tags / meal_photos の行は CASCADE で消える。tags はサジェストのために残す。
-// R2 object は CASCADE では消えないので、先に key を集めて配列 1 回で消す（R2 が先:
-// 逆順だと一時的な R2 障害が消せない orphan object になる。skill cloudflare-r2-private-image-upload）
+// meal_tags / meal_photos / meal_link_previews の行は CASCADE で消える。tags はサジェストのために残す。
+// R2 object は CASCADE では消えないので、先に key を集めて配列 1 回で消す（写真も og:image も同じ
+// bucket。R2 が先: 逆順だと一時的な R2 障害が消せない orphan object になる。
+// skill cloudflare-r2-private-image-upload）
 export async function deleteMeal(
   d1: D1Database,
   bucket: R2Bucket,
   spaceId: SpaceId,
   mealId: MealId,
 ): Promise<boolean> {
-  const keys = await photoKeysOfMeal(drizzle(d1), spaceId, mealId);
+  const db = drizzle(d1);
+  const [photoKeys, previewKeys] = await Promise.all([
+    photoKeysOfMeal(db, spaceId, mealId),
+    linkPreviewImageKeysOfMeal(db, spaceId, mealId),
+  ]);
+  const keys = [...photoKeys, ...previewKeys];
   if (keys.length > 0) await bucket.delete(keys);
-  const deleted = await drizzle(d1)
+  const deleted = await db
     .delete(meals)
     .where(and(eq(meals.id, mealId), eq(meals.spaceId, spaceId)))
     .returning({ id: meals.id });

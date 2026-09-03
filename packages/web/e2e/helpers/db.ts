@@ -15,6 +15,7 @@ export function resetLocalDb(): void {
   executeLocalSql(
     [
       "DELETE FROM meal_tags",
+      "DELETE FROM meal_link_previews",
       "DELETE FROM meals",
       "DELETE FROM tags",
       "DELETE FROM invites",

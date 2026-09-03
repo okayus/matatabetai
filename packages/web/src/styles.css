@@ -285,6 +285,61 @@
     border: 1px solid var(--color-border);
     border-radius: calc(var(--radius) / 2);
   }
+  /* URL プレビュー（ADR-007 §5）。カードでもプレーンリンクでも同じ縦並びに収める */
+  .link-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  /* 投稿時のスナップショットが取れたリンク。カード全体が 1 つの <a> */
+  .link-card {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    padding: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: inherit;
+    text-decoration: none;
+  }
+  .link-card:hover {
+    border-color: var(--color-accent);
+  }
+  /* 取り込んだ og:image。寸法は持っていないので枠を固定して CLS を出さない */
+  .link-card__media {
+    flex: none;
+    inline-size: 4.5rem;
+    aspect-ratio: 1;
+    border-radius: calc(var(--radius) / 2);
+    object-fit: cover;
+  }
+  .link-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    align-items: start;
+    min-inline-size: 0;
+  }
+  /* 他人のページの見出しは長い。2 行で切る（.suggest-card__name と同じ手） */
+  .link-card__title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    font-weight: 600;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  .link-card__site {
+    max-inline-size: 100%;
+    overflow: hidden;
+    color: var(--color-muted);
+    font-size: 0.75rem;
+    text-overflow: ellipsis;
+    text-wrap: nowrap;
+  }
   /* サジェストの札。20 件が縦を食わないよう 1 行の横スクロールに寝かせる */
   .suggest-strip {
     display: flex;

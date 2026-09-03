@@ -45,6 +45,20 @@ export type MealLinks = {
   recipeMemo: string | null;
 };
 export type MealTag = { id: string; name: string };
+// URL プレビューは投稿時のスナップショット（ADR-007 §3）。取得中・失敗はカードにせず
+// プレーンリンクのまま出す（3 状態のうち ok だけが見た目を変える — ADR-007 §5）
+export type LinkPreviewKind = "recipe" | "shop";
+export type LinkPreview =
+  | { kind: LinkPreviewKind; status: "pending" }
+  | {
+      kind: LinkPreviewKind;
+      status: "ok";
+      title: string;
+      description: string | null;
+      siteName: string | null;
+      hasImage: boolean;
+    }
+  | { kind: LinkPreviewKind; status: "failed" };
 // width / height は縮小後の本体寸法。<img> の寸法予約（CLS 回避）に使う
 export type MealPhoto = {
   id: string;
@@ -62,6 +76,7 @@ export type Meal = MealLinks & {
   mataTabetai: boolean;
   tags: MealTag[];
   photos: MealPhoto[];
+  previews: LinkPreview[];
   createdBy: string;
   createdByName: string;
   createdAt: string;
@@ -256,6 +271,10 @@ export async function uploadMealPhoto(
 
 export const deleteMealPhoto = (spaceId: string, mealId: string, photoId: string) =>
   del<Record<string, never>>(`/api/spaces/${spaceId}/meals/${mealId}/photos/${photoId}`);
+
+// プレビューの og:image も private R2 を Worker 経由で配る（写真と同じ流儀。URL は id から組む）
+export const linkPreviewImageUrl = (spaceId: string, mealId: string, kind: LinkPreviewKind) =>
+  `/api/spaces/${spaceId}/meals/${mealId}/link-previews/${kind}/image`;
 
 export const listInvites = (spaceId: string) => api<PendingInvite[]>(`/api/spaces/${spaceId}/invites`);
 export const issueInvite = (spaceId: string) => post<IssuedInvite>(`/api/spaces/${spaceId}/invites`);

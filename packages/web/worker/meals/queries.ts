@@ -1,7 +1,9 @@
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/d1";
 import { mealTags, meals, tags, users } from "../db/schema";
+import type { LinkPreview } from "../domain/link-preview";
 import { normalizeName, type MealLinks, type MealType } from "../domain/meal";
+import { previewsByMealIds } from "./link-previews";
 import { photosByMealIds, type MealPhotoSummary } from "./photos";
 
 type Db = ReturnType<typeof drizzle>;
@@ -9,7 +11,8 @@ type Db = ReturnType<typeof drizzle>;
 export type MealTagSummary = { id: string; name: string };
 
 // リンク・メモの 3 項目は入力と同じ形で返す（MealLinks — ADR-007 §1）。
-// 凍結列 recipe_source_type / url は API に出さない
+// 凍結列 recipe_source_type / url は API に出さない。
+// previews は URL がある欄のぶんだけ並ぶ（取得中・失敗も 1 要素として出る — ADR-007 §5）
 export type MealSummary = MealLinks & {
   id: string;
   name: string;
@@ -19,6 +22,7 @@ export type MealSummary = MealLinks & {
   mataTabetai: boolean;
   tags: MealTagSummary[];
   photos: MealPhotoSummary[];
+  previews: LinkPreview[];
   createdBy: string;
   createdByName: string;
   createdAt: string;
@@ -67,14 +71,16 @@ export async function listMeals(
     .limit(MEAL_LIST_LIMIT);
 
   const ids = rows.map((r) => r.id);
-  const [tagsByMeal, photosByMeal] = await Promise.all([
+  const [tagsByMeal, photosByMeal, previewsByMeal] = await Promise.all([
     loadMealTags(db, ids),
     photosByMealIds(db, ids),
+    previewsByMealIds(db, ids),
   ]);
   return rows.map((row) => ({
     ...row,
     tags: tagsByMeal.get(row.id) ?? [],
     photos: photosByMeal.get(row.id) ?? [],
+    previews: previewsByMeal.get(row.id) ?? [],
   }));
 }
 

@@ -3,8 +3,10 @@ import {
   deleteMeal,
   deleteMealPhoto,
   describeFailure,
+  linkPreviewImageUrl,
   mealPhotoUrl,
   setMataTabetai,
+  type LinkPreviewKind,
   type Meal,
   type MealPhoto,
 } from "../api";
@@ -165,20 +167,7 @@ function MealItem({
           ))}
         </div>
       )}
-      {(meal.recipeUrl || meal.shopUrl) && (
-        <div className="row">
-          {meal.recipeUrl && (
-            <a href={meal.recipeUrl} target="_blank" rel="noreferrer">
-              レシピ: {linkLabel(meal.recipeUrl)}
-            </a>
-          )}
-          {meal.shopUrl && (
-            <a href={meal.shopUrl} target="_blank" rel="noreferrer">
-              お店・商品: {linkLabel(meal.shopUrl)}
-            </a>
-          )}
-        </div>
-      )}
+      <MealLinkList spaceId={spaceId} meal={meal} />
       {meal.recipeMemo && (
         <details>
           <summary>作り方メモ</summary>
@@ -207,8 +196,60 @@ function MealItem({
   );
 }
 
-// リンクはドメイン名で示す（URL 全文はモバイルで長すぎる）。
-// PR ② の OGP カードはこの <a> の上に重ねる — 取得できなくてもリンクとしては常に働く（ADR-007 §5）
+// 欄の並びと見出しはフォームと同じ（レシピ → お店・商品）
+const LINK_KINDS = [
+  { kind: "recipe", label: "レシピ", urlOf: (m: Meal) => m.recipeUrl },
+  { kind: "shop", label: "お店・商品", urlOf: (m: Meal) => m.shopUrl },
+] as const satisfies readonly {
+  kind: LinkPreviewKind;
+  label: string;
+  urlOf: (m: Meal) => string | null;
+}[];
+
+// URL は常にリンクとして働き、投稿時のスナップショットが取れていた（ok）ときだけ
+// その上にカードを重ねる。取得中・失敗・行なしは同じ見え方なので、取得が途中で死んでも
+// 表示は壊れない（ADR-007 §5）。カードは投稿時点の姿で、表示時に外部へは出ない
+function MealLinkList({ spaceId, meal }: { spaceId: string; meal: Meal }) {
+  const links = LINK_KINDS.flatMap(({ kind, label, urlOf }) => {
+    const url = urlOf(meal);
+    return url === null
+      ? []
+      : [{ kind, label, url, preview: meal.previews.find((p) => p.kind === kind) ?? null }];
+  });
+  if (links.length === 0) return null;
+  return (
+    <ul className="link-list" role="list">
+      {links.map(({ kind, label, url, preview }) => (
+        <li key={kind}>
+          {preview?.status === "ok" ? (
+            <a className="link-card" href={url} target="_blank" rel="noreferrer">
+              {preview.hasImage && (
+                <img
+                  className="link-card__media"
+                  src={linkPreviewImageUrl(spaceId, meal.id, kind)}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                />
+              )}
+              <span className="link-card__body">
+                <span className="badge">{label}</span>
+                <span className="link-card__title">{preview.title}</span>
+                <span className="link-card__site">{preview.siteName ?? linkLabel(url)}</span>
+              </span>
+            </a>
+          ) : (
+            <a href={url} target="_blank" rel="noreferrer">
+              {label}: {linkLabel(url)}
+            </a>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// リンクはドメイン名で示す（URL 全文はモバイルで長すぎる）
 function linkLabel(url: string): string {
   try {
     return new URL(url).hostname;

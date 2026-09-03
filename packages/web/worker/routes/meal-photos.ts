@@ -11,6 +11,7 @@ import {
   sniffImageType,
 } from "../domain/photo";
 import type { SpaceEnv } from "../env";
+import { serveR2Object } from "../lib/r2-object";
 import {
   deleteMealPhoto,
   getPhoto,
@@ -101,31 +102,13 @@ export const mealPhotoRoutes = new Hono<SpaceEnv>()
     if (!row) return fail(c, { type: "not_found" });
 
     const key = c.req.query("variant") === "thumb" && row.thumbKey ? row.thumbKey : row.r2Key;
-    // onlyIf: ブラウザの If-None-Match / If-Modified-Since を R2 に評価させる
-    const obj = await c.env.PHOTOS_BUCKET.get(key, { onlyIf: c.req.raw.headers });
-    if (obj === null) {
-      // 行はあるのに object が無い＝不整合（削除順序が守られていれば起きない）。理由はログだけに
+    // thumb は本体と別 object。行の content_type は object 側が欠けたときの控え
+    const res = await serveR2Object(c.env.PHOTOS_BUCKET, key, c.req.raw.headers, row.contentType);
+    if (res === null) {
       console.error("[meal-photos] row without R2 object", key);
       return fail(c, { type: "not_found" });
     }
-
-    const headers = new Headers({
-      // public にすると edge cache が cookie を見ずに配る。Cache API も使わない
-      "Cache-Control": "private, max-age=3600",
-      ETag: obj.httpEtag,
-      "X-Content-Type-Options": "nosniff",
-    });
-    if (!("body" in obj)) {
-      // precondition 成立 → body なしの R2Object が返る → 304
-      return new Response(null, { status: 304, headers });
-    }
-    // thumb は本体と別 object なので content type は object 側（put 時の sniff 結果）を優先
-    headers.set("Content-Type", obj.httpMetadata?.contentType ?? row.contentType);
-    // DB の size_bytes は使わない（再アップロード等で object と食い違い得る）
-    headers.set("Content-Length", String(obj.size));
-    // filename は付けない（日本語名は RFC 5987 が要る。inline 表示に名前は不要）
-    headers.set("Content-Disposition", "inline");
-    return new Response(obj.body, { status: 200, headers });
+    return res;
   })
 
   .delete("/:photoId", async (c) => {
