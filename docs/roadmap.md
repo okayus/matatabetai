@@ -27,6 +27,9 @@
 - [x] レシピ・リンク欄の 3 項目化（排他をやめる）— [ADR-007](adr/007-recipe-links-ogp.md) §1-2
 - [x] URL プレビュー（投稿時スナップショット）— [ADR-007](adr/007-recipe-links-ogp.md) §3-7、okayus-skills の新 skill 候補
 - [x] 週 / 月の集計 UI、タグクラウド — [ADR-006](adr/006-lookback-stats-tag-search.md) 改訂 §5-8
+- [ ] 投稿の編集（[requirements](requirements.md) 11）— 2026-09-03 追加
+- [ ] 写真のカルーセル（[requirements](requirements.md) 12）— 2026-09-03 追加
+- [ ] 写真グリッドのタイムライン（[requirements](requirements.md) 13）— 2026-09-03 追加
 
 ## Phase 4 — 公開前の堅牢化
 
@@ -45,4 +48,4 @@
 4. ~~ドメイン~~ → ✅ workers.dev のまま（2026-09-01。`matatabetai.shiraoka.workers.dev` に RP_ID/ORIGIN 固定済みで作業なし。後から custom domain へ移るなら credential 移行戦略ごと再検討 — CLAUDE.md「RP_ID / ORIGIN」）
 5. ~~デプロイ経路~~ → ✅ Workers Builds（キーレス）へ移行済み（ADR-001 §1、#33。GitHub 側に Cloudflare の credential は無い）
 6. ~~写真のバックアップ~~ → ✅ 受容（アプリが持つのは縮小コピーで原本はスマホに残る。[ADR-004](adr/004-meal-photos-r2.md) §7、2026-09-01）
-7. レシピ本文の取り込み — JSON-LD（schema.org/Recipe）路線で調査を先行（人間: cookpad 等の規約原文をホストのブラウザで確認）→ ADR-008 で決める（2026-09-03。Readability 全文抽出は採らない）
+7. レシピ本文の取り込み — JSON-LD（schema.org/Recipe）路線で調査を先行（人間: cookpad 等の規約原文をホストのブラウザで確認）→ ADR で決める（2026-09-03。番号は起草時に採る。Readability 全文抽出は採らない）
