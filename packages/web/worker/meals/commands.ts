@@ -2,8 +2,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { meals, tags } from "../db/schema";
 import {
+  frozenRecipeColumns,
   normalizeName,
-  recipeSourceToColumns,
   uniqueTagNames,
   type CreateMealInput,
   type MealId,
@@ -24,7 +24,8 @@ export async function createMeal(
 ): Promise<{ id: string; tags: MealTagSummary[] }> {
   const id = crypto.randomUUID();
   const tagNames = uniqueTagNames(input.tags);
-  const cols = recipeSourceToColumns(input.recipeSource);
+  // recipe_source_type / url は凍結列。3 項目とは別に、旧 CHECK を満たす値を導出して書く
+  const frozen = frozenRecipeColumns(input.recipeMemo);
   await d1.batch([
     ...tagNames.map((name) =>
       d1
@@ -36,7 +37,7 @@ export async function createMeal(
     // またたべたい は投稿後のトグルで付ける（作成時は常に 0）
     d1
       .prepare(
-        "INSERT INTO meals (id, space_id, name, name_normalized, eaten_on, meal_type, recipe_source_type, url, recipe_text, note, mata_tabetai, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+        "INSERT INTO meals (id, space_id, name, name_normalized, eaten_on, meal_type, recipe_source_type, url, recipe_url, shop_url, recipe_text, note, mata_tabetai, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
       )
       .bind(
         id,
@@ -45,9 +46,11 @@ export async function createMeal(
         normalizeName(input.name),
         input.eatenOn,
         input.mealType,
-        cols.recipeSourceType,
-        cols.url,
-        cols.recipeText,
+        frozen.recipeSourceType,
+        frozen.url,
+        input.recipeUrl,
+        input.shopUrl,
+        input.recipeMemo,
         input.note,
         userId,
         now,

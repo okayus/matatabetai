@@ -38,10 +38,12 @@ export type Credential = {
   lastUsedAt: string | null;
 };
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
-export type RecipeSource =
-  | { type: "url"; url: string }
-  | { type: "text"; text: string }
-  | { type: "none" };
+// レシピ URL / お店・商品 URL / 作り方メモ は独立した任意の 3 項目（併用可 — ADR-007 §1）
+export type MealLinks = {
+  recipeUrl: string | null;
+  shopUrl: string | null;
+  recipeMemo: string | null;
+};
 export type MealTag = { id: string; name: string };
 // width / height は縮小後の本体寸法。<img> の寸法予約（CLS 回避）に使う
 export type MealPhoto = {
@@ -51,12 +53,11 @@ export type MealPhoto = {
   hasThumb: boolean;
   createdAt: string;
 };
-export type Meal = {
+export type Meal = MealLinks & {
   id: string;
   name: string;
   eatenOn: string;
   mealType: MealType | null;
-  recipeSource: RecipeSource;
   note: string | null;
   mataTabetai: boolean;
   tags: MealTag[];
@@ -73,21 +74,19 @@ export type MealNameStat = {
   lastEatenOn: string;
   mataTabetai: boolean;
 };
-// 投稿フォームのサジェスト（requirements 8）。料理名ごとに直近 1 件、選ぶと前回の内容を引き継ぐ
-export type MealSuggestion = {
+// 投稿フォームのサジェスト（requirements 8）。料理名ごとに直近 1 件、選ぶと前回のリンク・作り方メモ・タグを引き継ぐ
+export type MealSuggestion = MealLinks & {
   mealId: string;
   name: string;
   lastEatenOn: string;
   mataTabetai: boolean;
-  recipeSource: RecipeSource;
   tags: MealTag[];
   photo: { id: string; hasThumb: boolean } | null;
 };
-export type CreateMealBody = {
+export type CreateMealBody = MealLinks & {
   name: string;
   eatenOn: string;
   mealType: MealType | null;
-  recipeSource: RecipeSource;
   note: string | null;
   tags: string[];
 };

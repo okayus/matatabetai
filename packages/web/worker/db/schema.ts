@@ -119,6 +119,7 @@ export const invites = sqliteTable(
 // meals は meal_tags（CASCADE 子）の親。後から meals を作り直す migration は D1 の CASCADE 事故
 // （skill cloudflare-d1-drizzle-migration）になるので、列と CHECK は最初に決め切る。
 // meal_type に CHECK を付けないのは意図: 値の追加が table rebuild になるのを避け、enum は zod 境界で守る。
+// リンク・メモは recipe_url / shop_url / recipe_text の独立 3 項目（ADR-007）。
 export const meals = sqliteTable(
   "meals",
   {
@@ -132,10 +133,13 @@ export const meals = sqliteTable(
     // JST の日付文字列 YYYY-MM-DD。時刻は持たない
     eatenOn: text("eaten_on").notNull(),
     mealType: text("meal_type", { enum: ["breakfast", "lunch", "dinner", "snack"] }),
-    // RecipeSource Discriminated Union の平坦化。url は「レシピ」「店」「商品」を区別しない 1 本
+    // 凍結列（ADR-007 §2）。旧 RecipeSource DU の平坦化の名残で、meals_recipe_source_check を
+    // 満たすためだけに書き続ける（CHECK を外す = table rebuild で D1 の CASCADE 事故）。
+    // 掃除は Phase 4 のバックアップ整備後に別 migration で行う
     recipeSourceType: text("recipe_source_type", { enum: ["url", "text", "none"] }).notNull(),
     url: text("url"),
-    recipeText: text("recipe_text"),
+    // 作り方メモ（旧「自作レシピ」）。列は recipe_text をそのまま再利用する（ADR-007 §1）
+    recipeMemo: text("recipe_text"),
     note: text("note"),
     mataTabetai: integer("mata_tabetai", { mode: "boolean" }).notNull(),
     // 表示・監査用。認可軸ではない（境界は space_id）。user 削除で投稿を消さないので cascade にしない
@@ -144,13 +148,17 @@ export const meals = sqliteTable(
       .references(() => users.id),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
+    // レシピ URL と お店・商品 URL。作り方メモと合わせた独立 3 項目で、排他ではなく併用できる
+    // （ADR-007 §1）。ADD COLUMN は末尾に付くので、物理順どおりここに並べる
+    recipeUrl: text("recipe_url"),
+    shopUrl: text("shop_url"),
   },
   (t) => [
     // 一覧は WHERE space_id = ? ORDER BY eaten_on DESC
     index("meals_space_id_eaten_on_idx").on(t.spaceId, t.eatenOn),
     check(
       "meals_recipe_source_check",
-      sql`(${t.recipeSourceType} = 'url' AND ${t.url} IS NOT NULL AND ${t.recipeText} IS NULL) OR (${t.recipeSourceType} = 'text' AND ${t.recipeText} IS NOT NULL AND ${t.url} IS NULL) OR (${t.recipeSourceType} = 'none' AND ${t.url} IS NULL AND ${t.recipeText} IS NULL)`,
+      sql`(${t.recipeSourceType} = 'url' AND ${t.url} IS NOT NULL AND ${t.recipeMemo} IS NULL) OR (${t.recipeSourceType} = 'text' AND ${t.recipeMemo} IS NOT NULL AND ${t.url} IS NULL) OR (${t.recipeSourceType} = 'none' AND ${t.url} IS NULL AND ${t.recipeMemo} IS NULL)`,
     ),
   ],
 );

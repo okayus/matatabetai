@@ -1,19 +1,20 @@
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/d1";
 import { mealTags, meals, tags, users } from "../db/schema";
-import { normalizeName, recipeSourceFromColumns, type MealType, type RecipeSource } from "../domain/meal";
+import { normalizeName, type MealLinks, type MealType } from "../domain/meal";
 import { photosByMealIds, type MealPhotoSummary } from "./photos";
 
 type Db = ReturnType<typeof drizzle>;
 
 export type MealTagSummary = { id: string; name: string };
 
-export type MealSummary = {
+// リンク・メモの 3 項目は入力と同じ形で返す（MealLinks — ADR-007 §1）。
+// 凍結列 recipe_source_type / url は API に出さない
+export type MealSummary = MealLinks & {
   id: string;
   name: string;
   eatenOn: string;
   mealType: MealType | null;
-  recipeSource: RecipeSource;
   note: string | null;
   mataTabetai: boolean;
   tags: MealTagSummary[];
@@ -43,9 +44,9 @@ export async function listMeals(
       name: meals.name,
       eatenOn: meals.eatenOn,
       mealType: meals.mealType,
-      recipeSourceType: meals.recipeSourceType,
-      url: meals.url,
-      recipeText: meals.recipeText,
+      recipeUrl: meals.recipeUrl,
+      shopUrl: meals.shopUrl,
+      recipeMemo: meals.recipeMemo,
       note: meals.note,
       mataTabetai: meals.mataTabetai,
       createdBy: meals.createdBy,
@@ -70,11 +71,10 @@ export async function listMeals(
     loadMealTags(db, ids),
     photosByMealIds(db, ids),
   ]);
-  return rows.map(({ recipeSourceType, url, recipeText, ...rest }) => ({
-    ...rest,
-    recipeSource: recipeSourceFromColumns(recipeSourceType, url, recipeText),
-    tags: tagsByMeal.get(rest.id) ?? [],
-    photos: photosByMeal.get(rest.id) ?? [],
+  return rows.map((row) => ({
+    ...row,
+    tags: tagsByMeal.get(row.id) ?? [],
+    photos: photosByMeal.get(row.id) ?? [],
   }));
 }
 
@@ -96,17 +96,16 @@ async function loadMealTags(db: Db, mealIds: string[]): Promise<Map<string, Meal
 }
 
 // 投稿フォームのサジェスト（requirements 8）。料理名ごとに直近 1 件を返し、選ぶと
-// 前回の URL / レシピ / タグを複製できる。件数は requirements「主要クエリ」の LIMIT 20
+// 前回のリンク 2 種 / 作り方メモ / タグを複製できる。件数は requirements「主要クエリ」の LIMIT 20
 export const SUGGESTION_LIMIT = 20;
 
-export type MealSuggestion = {
+export type MealSuggestion = MealLinks & {
   // 直近の投稿。写真 URL の組み立てと React の key に使う
   mealId: string;
   name: string;
   lastEatenOn: string;
   // 同じ料理名の投稿のどれか 1 つでも「またたべたい」なら立つ
   mataTabetai: boolean;
-  recipeSource: RecipeSource;
   tags: MealTagSummary[];
   photo: { id: string; hasThumb: boolean } | null;
 };
@@ -139,9 +138,9 @@ export async function listSuggestions(
         name: meals.name,
         lastEatenOn: meals.eatenOn,
         createdAt: meals.createdAt,
-        recipeSourceType: meals.recipeSourceType,
-        url: meals.url,
-        recipeText: meals.recipeText,
+        recipeUrl: meals.recipeUrl,
+        shopUrl: meals.shopUrl,
+        recipeMemo: meals.recipeMemo,
         rank: sql<number>`row_number() over (partition by ${meals.nameNormalized} order by ${meals.eatenOn} desc, ${meals.createdAt} desc)`.as(
           "rank",
         ),
@@ -164,9 +163,9 @@ export async function listSuggestions(
       mealId: ranked.mealId,
       name: ranked.name,
       lastEatenOn: ranked.lastEatenOn,
-      recipeSourceType: ranked.recipeSourceType,
-      url: ranked.url,
-      recipeText: ranked.recipeText,
+      recipeUrl: ranked.recipeUrl,
+      shopUrl: ranked.shopUrl,
+      recipeMemo: ranked.recipeMemo,
       everMataTabetai: ranked.everMataTabetai,
     })
     .from(ranked)
@@ -179,12 +178,11 @@ export async function listSuggestions(
     loadMealTags(db, ids),
     photosByMealIds(db, ids),
   ]);
-  return rows.map(({ recipeSourceType, url, recipeText, everMataTabetai, ...rest }) => {
+  return rows.map(({ everMataTabetai, ...rest }) => {
     const first = photosByMeal.get(rest.mealId)?.[0];
     return {
       ...rest,
       mataTabetai: everMataTabetai > 0,
-      recipeSource: recipeSourceFromColumns(recipeSourceType, url, recipeText),
       tags: tagsByMeal.get(rest.mealId) ?? [],
       photo: first ? { id: first.id, hasThumb: first.hasThumb } : null,
     };
