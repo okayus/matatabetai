@@ -62,7 +62,6 @@ meal_tags    (meal_id, tag_id)                       PK(meal_id, tag_id)
 ## 決めていないこと（backlog）
 
 - レシピ本文の取り込み — JSON-LD（`schema.org/Recipe`）の材料・手順を「作り方メモ」の下書きに整形する案が本命（Readability 全文抽出は権利・規約リスクで採らない）。規約調査（人間がホストで cookpad 等の原文を確認）→ ADR-008 で決める
-- 期間集計の UI（週 / 月）、タグクラウド
 - スペース切替 UI（内部モデルは複数スペース対応、UI は当面 1 スペース）
 
 ## 実装への設計メモ（CLAUDE.md から移設、2026-08-23）

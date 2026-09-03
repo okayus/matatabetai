@@ -26,7 +26,7 @@
 - [x] 料理名の集計（期間）、タグ検索（AND）、またたべたい一覧 — [ADR-006](adr/006-lookback-stats-tag-search.md)
 - [x] レシピ・リンク欄の 3 項目化（排他をやめる）— [ADR-007](adr/007-recipe-links-ogp.md) §1-2
 - [x] URL プレビュー（投稿時スナップショット）— [ADR-007](adr/007-recipe-links-ogp.md) §3-7、okayus-skills の新 skill 候補
-- [ ] 週 / 月の集計 UI、タグクラウド
+- [x] 週 / 月の集計 UI、タグクラウド — [ADR-006](adr/006-lookback-stats-tag-search.md) 改訂 §5-8
 
 ## Phase 4 — 公開前の堅牢化
 
