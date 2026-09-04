@@ -24,7 +24,7 @@ import { preparePhoto, type PreparedPhoto } from "../lib/image-prep";
 import {
   applySuggestion,
   emptyMealForm,
-  toCreateMealBody,
+  toMealContentBody,
   MEAL_TYPES,
   MEAL_TYPE_LABEL,
   type MealFormState,
@@ -166,7 +166,7 @@ function MealForm({
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const r = await createMeal(spaceId, toCreateMealBody(form));
+    const r = await createMeal(spaceId, toMealContentBody(form));
     if (r.isErr()) {
       setBusy(false);
       setError(describeFailure(r.error));

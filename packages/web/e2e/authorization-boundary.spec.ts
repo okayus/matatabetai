@@ -49,6 +49,14 @@ test("a member of space A gets 404 for space B (API and UI)", async ({ page, bas
   expect(crossPatch.status()).toBe(404);
   expect(await crossPatch.json()).toEqual({ error: { type: "not_found" } });
 
+  // 編集も同じ（内容の全置き換えなので body は有効なものを送る = 400 に化けない）
+  const crossPut = await page.request.put(`/api/spaces/${mine}/meals/${OTHER_MEAL_ID}`, {
+    headers: origin,
+    data: { name: "よそのを書き換え", eatenOn: "2026-09-01", tags: [] },
+  });
+  expect(crossPut.status()).toBe(404);
+  expect(await crossPut.json()).toEqual({ error: { type: "not_found" } });
+
   // サジェストとタグは集約するぶん space_id を落としやすい。自分のスペースは空のまま
   // （他家族の「よその肉じゃが」もそのタグも混ざらない）
   expect(await (await page.request.get(`/api/spaces/${mine}/meals/suggestions`)).json()).toEqual([]);

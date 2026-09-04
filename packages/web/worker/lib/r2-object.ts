@@ -6,6 +6,9 @@ export async function serveR2Object(
   key: string,
   requestHeaders: Headers,
   fallbackContentType: string,
+  // 既定は写真向け（id ごとに URL が一意 = 中身は変わらない）。URL が固定で中身が
+  // 変わり得るものだけ "private, no-cache" を渡す（ADR-008 §5）
+  cacheControl = "private, max-age=3600",
 ): Promise<Response | null> {
   // onlyIf: ブラウザの If-None-Match / If-Modified-Since を R2 に評価させる
   const obj = await bucket.get(key, { onlyIf: requestHeaders });
@@ -14,7 +17,7 @@ export async function serveR2Object(
 
   const headers = new Headers({
     // public にすると edge cache が cookie を見ずに配る。Cache API も使わない
-    "Cache-Control": "private, max-age=3600",
+    "Cache-Control": cacheControl,
     ETag: obj.httpEtag,
     "X-Content-Type-Options": "nosniff",
   });

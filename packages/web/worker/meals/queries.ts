@@ -36,40 +36,27 @@ export const MEAL_LIST_LIMIT = 50;
 // 同じ一覧の絞り込み。2 つは直交して合成できる（「またたべたいの中からじゃがいもで」）
 export type MealListFilter = { tagNames: readonly string[]; mataTabetaiOnly: boolean };
 
-export async function listMeals(
-  db: Db,
-  spaceId: string,
-  filter: MealListFilter,
-): Promise<MealSummary[]> {
-  const keys = filter.tagNames.map(normalizeName);
-  const rows = await db
-    .select({
-      id: meals.id,
-      name: meals.name,
-      eatenOn: meals.eatenOn,
-      mealType: meals.mealType,
-      recipeUrl: meals.recipeUrl,
-      shopUrl: meals.shopUrl,
-      recipeMemo: meals.recipeMemo,
-      note: meals.note,
-      mataTabetai: meals.mataTabetai,
-      createdBy: meals.createdBy,
-      createdByName: users.displayName,
-      createdAt: meals.createdAt,
-      updatedAt: meals.updatedAt,
-    })
-    .from(meals)
-    .innerJoin(users, eq(meals.createdBy, users.id))
-    .where(
-      and(
-        eq(meals.spaceId, spaceId),
-        filter.mataTabetaiOnly ? eq(meals.mataTabetai, true) : undefined,
-        keys.length === 0 ? undefined : inArray(meals.id, mealIdsWithAllTags(db, spaceId, keys)),
-      ),
-    )
-    .orderBy(desc(meals.eatenOn), desc(meals.createdAt))
-    .limit(MEAL_LIST_LIMIT);
+// 一覧・単体で同じ列を返す（表示名は created_by の user 行から引く）
+const MEAL_COLUMNS = {
+  id: meals.id,
+  name: meals.name,
+  eatenOn: meals.eatenOn,
+  mealType: meals.mealType,
+  recipeUrl: meals.recipeUrl,
+  shopUrl: meals.shopUrl,
+  recipeMemo: meals.recipeMemo,
+  note: meals.note,
+  mataTabetai: meals.mataTabetai,
+  createdBy: meals.createdBy,
+  createdByName: users.displayName,
+  createdAt: meals.createdAt,
+  updatedAt: meals.updatedAt,
+} as const;
 
+type MealRow = Omit<MealSummary, "tags" | "photos" | "previews">;
+
+// タグ・写真・プレビューを 1 往復ずつでまとめて足す（行ごとに引かない）
+async function withRelations(db: Db, rows: MealRow[]): Promise<MealSummary[]> {
   const ids = rows.map((r) => r.id);
   const [tagsByMeal, photosByMeal, previewsByMeal] = await Promise.all([
     loadMealTags(db, ids),
@@ -82,6 +69,43 @@ export async function listMeals(
     photos: photosByMeal.get(row.id) ?? [],
     previews: previewsByMeal.get(row.id) ?? [],
   }));
+}
+
+export async function listMeals(
+  db: Db,
+  spaceId: string,
+  filter: MealListFilter,
+): Promise<MealSummary[]> {
+  const keys = filter.tagNames.map(normalizeName);
+  const rows = await db
+    .select(MEAL_COLUMNS)
+    .from(meals)
+    .innerJoin(users, eq(meals.createdBy, users.id))
+    .where(
+      and(
+        eq(meals.spaceId, spaceId),
+        filter.mataTabetaiOnly ? eq(meals.mataTabetai, true) : undefined,
+        keys.length === 0 ? undefined : inArray(meals.id, mealIdsWithAllTags(db, spaceId, keys)),
+      ),
+    )
+    .orderBy(desc(meals.eatenOn), desc(meals.createdAt))
+    .limit(MEAL_LIST_LIMIT);
+  return await withRelations(db, rows);
+}
+
+// 編集の応答に使う 1 件版（ADR-008 §1）。一覧と同じ形を返すので、クライアントは
+// 行をそのまま差し替えられる。他スペースの id を当てても null = 404
+export async function getMeal(
+  db: Db,
+  spaceId: string,
+  mealId: string,
+): Promise<MealSummary | null> {
+  const rows = await db
+    .select(MEAL_COLUMNS)
+    .from(meals)
+    .innerJoin(users, eq(meals.createdBy, users.id))
+    .where(and(eq(meals.id, mealId), eq(meals.spaceId, spaceId)));
+  return (await withRelations(db, rows))[0] ?? null;
 }
 
 async function loadMealTags(db: Db, mealIds: string[]): Promise<Map<string, MealTagSummary[]>> {

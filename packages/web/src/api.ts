@@ -100,7 +100,8 @@ export type MealSuggestion = MealLinks & {
   tags: MealTag[];
   photo: { id: string; hasThumb: boolean } | null;
 };
-export type CreateMealBody = MealLinks & {
+// 記録の内容。作成と編集で同じ形を送る（編集は部分更新ではなく全置き換え — ADR-008 §1）
+export type MealContentBody = MealLinks & {
   name: string;
   eatenOn: string;
   mealType: MealType | null;
@@ -152,6 +153,7 @@ export async function api<T>(
 
 const post = <T>(path: string, body?: unknown) => api<T>(path, { method: "POST", body });
 const patch = <T>(path: string, body: unknown) => api<T>(path, { method: "PATCH", body });
+const put = <T>(path: string, body: unknown) => api<T>(path, { method: "PUT", body });
 const del = <T>(path: string) => api<T>(path, { method: "DELETE" });
 
 // --- auth ---------------------------------------------------------------------------------
@@ -233,8 +235,12 @@ export const listMealTagStats = (
   const query = params.toString();
   return api<MealTagStat[]>(`/api/spaces/${spaceId}/meals/tag-stats${query ? `?${query}` : ""}`);
 };
-export const createMeal = (spaceId: string, body: CreateMealBody) =>
+export const createMeal = (spaceId: string, body: MealContentBody) =>
   post<Meal>(`/api/spaces/${spaceId}/meals`, body);
+// 編集（requirements 11）。全項目を毎回送り、応答は一覧と同じ形の更新後の 1 件。
+// またたべたい と写真はこの口では動かない（別の口が持つ — ADR-008 §1 / §4）
+export const updateMeal = (spaceId: string, mealId: string, body: MealContentBody) =>
+  put<Meal>(`/api/spaces/${spaceId}/meals/${mealId}`, body);
 export const setMataTabetai = (spaceId: string, mealId: string, mataTabetai: boolean) =>
   patch<{ id: string; mataTabetai: boolean; updatedAt: string }>(
     `/api/spaces/${spaceId}/meals/${mealId}`,

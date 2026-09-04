@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CreateMealInput,
+  MealContentInput,
   EatenOn,
   MealListQuery,
   MealStatsQuery,
@@ -104,7 +104,7 @@ describe("MealStatsQuery", () => {
   });
 });
 
-describe("CreateMealInput", () => {
+describe("MealContentInput", () => {
   const base = {
     name: "肉じゃが",
     eatenOn: "2026-09-01",
@@ -116,7 +116,7 @@ describe("CreateMealInput", () => {
     tags: [],
   };
   it("最小の投稿が通り、省略可能な列は null になる", () => {
-    const r = CreateMealInput.safeParse({ name: "肉じゃが", eatenOn: "2026-09-01" });
+    const r = MealContentInput.safeParse({ name: "肉じゃが", eatenOn: "2026-09-01" });
     expect(r.success).toBe(true);
     if (r.success) {
       expect(r.data.mealType).toBeNull();
@@ -128,16 +128,16 @@ describe("CreateMealInput", () => {
     }
   });
   it("空文字の note は null になる", () => {
-    const r = CreateMealInput.safeParse({ ...base, note: "  " });
+    const r = MealContentInput.safeParse({ ...base, note: "  " });
     expect(r.success).toBe(true);
     if (r.success) expect(r.data.note).toBeNull();
   });
   it("note は改行を許すが他の制御文字は拒む", () => {
-    expect(CreateMealInput.safeParse({ ...base, note: "うまい\nまた作る" }).success).toBe(true);
-    expect(CreateMealInput.safeParse({ ...base, note: `a${String.fromCharCode(7)}b` }).success).toBe(false);
+    expect(MealContentInput.safeParse({ ...base, note: "うまい\nまた作る" }).success).toBe(true);
+    expect(MealContentInput.safeParse({ ...base, note: `a${String.fromCharCode(7)}b` }).success).toBe(false);
   });
   it("レシピ URL・お店 URL・作り方メモは併用できる（排他ではない）", () => {
-    const r = CreateMealInput.safeParse({
+    const r = MealContentInput.safeParse({
       ...base,
       recipeUrl: "https://example.com/recipe/1",
       shopUrl: "https://shop.example.com/item",
@@ -151,12 +151,12 @@ describe("CreateMealInput", () => {
     }
   });
   it("どちらの URL 欄も http(s) 以外を拒む", () => {
-    expect(CreateMealInput.safeParse({ ...base, recipeUrl: "javascript:alert(1)" }).success).toBe(false);
-    expect(CreateMealInput.safeParse({ ...base, shopUrl: "javascript:alert(1)" }).success).toBe(false);
-    expect(CreateMealInput.safeParse({ ...base, recipeUrl: "https://example.com" }).success).toBe(true);
+    expect(MealContentInput.safeParse({ ...base, recipeUrl: "javascript:alert(1)" }).success).toBe(false);
+    expect(MealContentInput.safeParse({ ...base, shopUrl: "javascript:alert(1)" }).success).toBe(false);
+    expect(MealContentInput.safeParse({ ...base, recipeUrl: "https://example.com" }).success).toBe(true);
   });
   it("空文字の URL 欄・作り方メモは「なし」になる（未入力と同じ）", () => {
-    const r = CreateMealInput.safeParse({ ...base, recipeUrl: "  ", shopUrl: "", recipeMemo: " " });
+    const r = MealContentInput.safeParse({ ...base, recipeUrl: "  ", shopUrl: "", recipeMemo: " " });
     expect(r.success).toBe(true);
     if (r.success) {
       expect(r.data.recipeUrl).toBeNull();
@@ -166,11 +166,11 @@ describe("CreateMealInput", () => {
   });
   it("タグは 20 個まで", () => {
     const tags = Array.from({ length: 21 }, (_, i) => `tag${i}`);
-    expect(CreateMealInput.safeParse({ ...base, tags }).success).toBe(false);
-    expect(CreateMealInput.safeParse({ ...base, tags: tags.slice(0, 20) }).success).toBe(true);
+    expect(MealContentInput.safeParse({ ...base, tags }).success).toBe(false);
+    expect(MealContentInput.safeParse({ ...base, tags: tags.slice(0, 20) }).success).toBe(true);
   });
   it("料理名は 1〜100 文字", () => {
-    expect(CreateMealInput.safeParse({ ...base, name: "" }).success).toBe(false);
-    expect(CreateMealInput.safeParse({ ...base, name: "あ".repeat(101) }).success).toBe(false);
+    expect(MealContentInput.safeParse({ ...base, name: "" }).success).toBe(false);
+    expect(MealContentInput.safeParse({ ...base, name: "あ".repeat(101) }).success).toBe(false);
   });
 });

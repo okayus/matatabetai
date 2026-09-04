@@ -53,7 +53,9 @@ test("OGP が取れた URL はカードになり、取れない URL はプレー
   const served = await page.request.get(imagePath);
   expect(served.status()).toBe(200);
   expect(served.headers()["content-type"]).toBe("image/png");
-  expect(served.headers()["cache-control"]).toBe("private, max-age=3600");
+  // 写真と違い、この URL は kind ごとに固定で貼り替えると中身が変わる（ADR-008 §5）。
+  // ブラウザに寝かせず毎回 ETag で確かめさせる
+  expect(served.headers()["cache-control"]).toBe("private, no-cache");
 
   // 取れなかったほうは行が failed のまま = プレーンリンク（ADR-007 §5）。
   // 画像も無いので proxy は 404

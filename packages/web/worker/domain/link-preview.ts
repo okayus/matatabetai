@@ -34,13 +34,51 @@ export function linkPreviewTargets(links: MealLinks): LinkPreviewTarget[] {
 }
 
 // R2 キーは拡張子なし（photoKeys と同じ流儀 — content type は object の httpMetadata が持つ）。
-// spaceId / mealId 接頭辞で 1 家族・1 投稿ぶんを list / 削除できる（ADR-007 §4）
+// spaceId / mealId 接頭辞で 1 家族・1 投稿ぶんを list / 削除できる（ADR-007 §4）。
+// 末尾の imageId は取得ごとに固有（ADR-008 §6）— 編集で同じ (meal, kind) の取得が 2 本走ったとき、
+// キーが同じだと負けたジョブの補償削除が勝ったジョブの画像を消す。配信も削除も行の
+// image_r2_key を読むので、キーの形はここだけの話で済む
 export function linkPreviewImageKey(
   spaceId: string,
   mealId: string,
   kind: LinkPreviewKind,
+  imageId: string,
 ): string {
-  return `ogp/${spaceId}/${mealId}/${kind}`;
+  return `ogp/${spaceId}/${mealId}/${kind}/${imageId}`;
+}
+
+// 保存済みのプレビュー行のうち、編集で「同じ URL か」を判定するのに要る分
+export type SavedLinkPreview = { kind: LinkPreviewKind; url: string; imageR2Key: string | null };
+
+// 編集で保存済みのプレビューをどうするか（ADR-008 §5）。URL が変わっていなければ
+// スナップショットは投稿時点の姿のまま残し、変わった / 消えたときだけ捨てて取り直す
+export type LinkPreviewPlan = {
+  // 消す行（URL が変わった / URL 自体が消えた）
+  staleKinds: LinkPreviewKind[];
+  // 消す R2 object（捨てる行が画像を持っていた分だけ）
+  staleImageKeys: string[];
+  // 立て直す pending 行 = これから取りに行く先
+  targets: LinkPreviewTarget[];
+};
+
+export function planLinkPreviews(
+  saved: readonly SavedLinkPreview[],
+  links: MealLinks,
+): LinkPreviewPlan {
+  const plan: LinkPreviewPlan = { staleKinds: [], staleImageKeys: [], targets: [] };
+  const next = new Map(linkPreviewTargets(links).map((t) => [t.kind, t.url]));
+  for (const kind of LINK_PREVIEW_KINDS) {
+    const row = saved.find((r) => r.kind === kind) ?? null;
+    const url = next.get(kind) ?? null;
+    // 同じ URL は触らない（カードは投稿時点の姿のまま — ADR-007 §3）
+    if (row !== null && row.url === url) continue;
+    if (row !== null) {
+      plan.staleKinds.push(kind);
+      if (row.imageR2Key !== null) plan.staleImageKeys.push(row.imageR2Key);
+    }
+    if (url !== null) plan.targets.push({ kind, url });
+  }
+  return plan;
 }
 
 // HTMLRewriter が拾う生の候補。og:* が無いページのために <title> も持つ
