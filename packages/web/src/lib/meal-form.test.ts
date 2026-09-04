@@ -5,7 +5,7 @@ import {
   emptyMealForm,
   formatTagInput,
   parseTagInput,
-  toCreateMealBody,
+  toMealContentBody,
   toMealType,
   type MealFormState,
 } from "./meal-form";
@@ -64,16 +64,16 @@ describe("toMealType", () => {
   });
 });
 
-describe("toCreateMealBody", () => {
+describe("toMealContentBody", () => {
   it("前後の空白を落とし、空のメモは null にする", () => {
-    const body = toCreateMealBody(filled);
+    const body = toMealContentBody(filled);
     expect(body.name).toBe("肉じゃが");
     expect(body.note).toBe("おかわりした");
-    expect(toCreateMealBody({ ...filled, note: "  " }).note).toBeNull();
+    expect(toMealContentBody({ ...filled, note: "  " }).note).toBeNull();
   });
 
   it("リンク 2 種と作り方メモは併記できる（排他ではない）", () => {
-    const body = toCreateMealBody({
+    const body = toMealContentBody({
       ...filled,
       recipeUrl: " https://example.com/a ",
       shopUrl: "https://shop.example.com/b",
@@ -85,7 +85,7 @@ describe("toCreateMealBody", () => {
   });
 
   it("空のリンク・作り方メモは null にする", () => {
-    const body = toCreateMealBody({ ...filled, recipeUrl: "  ", shopUrl: "", recipeMemo: " " });
+    const body = toMealContentBody({ ...filled, recipeUrl: "  ", shopUrl: "", recipeMemo: " " });
     expect(body.recipeUrl).toBeNull();
     expect(body.shopUrl).toBeNull();
     expect(body.recipeMemo).toBeNull();

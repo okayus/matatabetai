@@ -27,7 +27,16 @@ export const mealLinkPreviewRoutes = new Hono<SpaceEnv>().get("/:kind/image", as
   // 行が無い / 画像なしのプレビュー（失敗・og:image 無し）は同じ 404
   if (key === null) return fail(c, { type: "not_found" });
 
-  const res = await serveR2Object(c.env.PHOTOS_BUCKET, key, c.req.raw.headers, "image/jpeg");
+  // 写真と違ってこの URL は kind ごとに固定で、URL を貼り替えると同じ URL の中身が変わる。
+  // max-age で寝かせると貼り替えたのに前のサイトの画像が出るので、毎回 ETag で確かめる
+  // （ふだんは 304 が返るだけ — ADR-008 §5）
+  const res = await serveR2Object(
+    c.env.PHOTOS_BUCKET,
+    key,
+    c.req.raw.headers,
+    "image/jpeg",
+    "private, no-cache",
+  );
   if (res === null) {
     console.error("[link-previews] row without R2 object", key);
     return fail(c, { type: "not_found" });

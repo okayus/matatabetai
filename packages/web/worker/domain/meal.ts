@@ -115,7 +115,9 @@ export function uniqueTagNames(names: readonly TagName[]): TagName[] {
 const nullableField = <S extends z.ZodType>(schema: S) =>
   schema.nullish().transform((v) => v ?? null);
 
-export const CreateMealInput = z.object({
+// 記録の内容そのもの。作成と編集で同じ入力を使う（編集は部分更新ではなく全置き換え — ADR-008 §1）。
+// またたべたい（家族の反応）と写真（子リソース）はこの外側にあり、この型には入らない
+export const MealContentInput = z.object({
   name: MealName,
   eatenOn: EatenOn,
   mealType: nullableField(MealType),
@@ -125,7 +127,7 @@ export const CreateMealInput = z.object({
   note: optionalText(1000),
   tags: z.array(TagName).max(20).default([]),
 });
-export type CreateMealInput = z.output<typeof CreateMealInput>;
+export type MealContentInput = z.output<typeof MealContentInput>;
 
 export const UpdateMataTabetaiInput = z.object({ mataTabetai: z.boolean() });
 

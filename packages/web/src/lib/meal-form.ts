@@ -1,7 +1,7 @@
-import type { CreateMealBody, MealSuggestion, MealTag, MealType } from "../api";
+import type { MealContentBody, MealSuggestion, MealTag, MealType } from "../api";
 
 // 投稿フォームの入力状態。DOM ではなくこの値が唯一の出所（サジェストが上書きするので
-// 非制御のままでは引き継ぎができない）。送信直前に CreateMealBody へ畳む
+// 非制御のままでは引き継ぎができない）。送信直前に MealContentBody へ畳む
 export type MealFormState = {
   name: string;
   eatenOn: string;
@@ -64,7 +64,7 @@ export function applySuggestion(form: MealFormState, suggestion: MealSuggestion)
   };
 }
 
-export function toCreateMealBody(form: MealFormState): CreateMealBody {
+export function toMealContentBody(form: MealFormState): MealContentBody {
   return {
     name: form.name.trim(),
     eatenOn: form.eatenOn,

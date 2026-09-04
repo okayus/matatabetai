@@ -12,6 +12,7 @@ import {
   type LinkPreviewSnapshot,
   type LinkPreviewTarget,
   type OgpCandidates,
+  type SavedLinkPreview,
 } from "../domain/link-preview";
 import type { MealId } from "../domain/meal";
 import { isAllowedImageType, sniffImageType } from "../domain/photo";
@@ -46,6 +47,35 @@ export function pendingPreviewStatements(
         "INSERT INTO meal_link_previews (meal_id, kind, url, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
       )
       .bind(mealId, t.kind, t.url, now),
+  );
+}
+
+// 編集で「同じ URL か」を判定するための保存済みの行（ADR-008 §5）。
+// 他の meal 参照と同じく meals と join して space_id まで一致した時だけ見る
+export async function savedPreviewsOfMeal(
+  db: Db,
+  spaceId: SpaceId,
+  mealId: MealId,
+): Promise<SavedLinkPreview[]> {
+  return await db
+    .select({
+      kind: mealLinkPreviews.kind,
+      url: mealLinkPreviews.url,
+      imageR2Key: mealLinkPreviews.imageR2Key,
+    })
+    .from(mealLinkPreviews)
+    .innerJoin(meals, eq(mealLinkPreviews.mealId, meals.id))
+    .where(and(eq(mealLinkPreviews.mealId, mealId), eq(meals.spaceId, spaceId)));
+}
+
+// 捨てる行（URL が変わった / 消えた kind）。R2 の画像は呼び出し側が先に消す（ADR-004 §6）
+export function stalePreviewStatements(
+  d1: D1Database,
+  mealId: string,
+  kinds: readonly LinkPreviewKind[],
+): D1PreparedStatement[] {
+  return kinds.map((kind) =>
+    d1.prepare("DELETE FROM meal_link_previews WHERE meal_id = ? AND kind = ?").bind(mealId, kind),
   );
 }
 
@@ -143,13 +173,15 @@ async function runOne(
   // object だけが残る形は下の compensating delete で消せる
   let imageKey: string | null = null;
   if (snapshot !== null && snapshot.imageUrl !== null) {
-    const key = linkPreviewImageKey(spaceId, mealId, target.kind);
+    const key = linkPreviewImageKey(spaceId, mealId, target.kind, crypto.randomUUID());
     if (await storeImage(bucket, key, snapshot.imageUrl)) imageKey = key;
   }
 
+  // url も条件に入れる（ADR-008 §6）。取得中に投稿が編集されて URL が変わっていたら、
+  // この結果は「別の URL の姿」なので書かない
   const written = await d1
     .prepare(
-      "UPDATE meal_link_previews SET status = ?, title = ?, description = ?, site_name = ?, image_r2_key = ?, fetched_at = ? WHERE meal_id = ? AND kind = ?",
+      "UPDATE meal_link_previews SET status = ?, title = ?, description = ?, site_name = ?, image_r2_key = ?, fetched_at = ? WHERE meal_id = ? AND kind = ? AND url = ?",
     )
     .bind(
       snapshot === null ? "failed" : "ok",
@@ -160,9 +192,11 @@ async function runOne(
       new Date().toISOString(),
       mealId,
       target.kind,
+      target.url,
     )
     .run();
-  // 取得中に投稿が消えた（行は CASCADE で消えた）。置いたばかりの画像は誰も参照しないので消す
+  // 取得中に投稿が消えた / URL が貼り替わった。置いたばかりの画像は誰も参照しないので消す
+  // （キーは取得ごとに固有なので、後から走ったジョブの画像を消す心配はない）
   if (written.meta.changes === 0 && imageKey !== null) await bucket.delete(imageKey);
 }
 

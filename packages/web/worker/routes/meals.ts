@@ -2,7 +2,7 @@ import { drizzle } from "drizzle-orm/d1";
 import { Hono, type Context } from "hono";
 import { errorBody, errorStatus, parseWith, type AppError } from "../domain/errors";
 import {
-  CreateMealInput,
+  MealContentInput,
   MealId,
   MealListQuery,
   MealStatsQuery,
@@ -10,11 +10,12 @@ import {
   UpdateMataTabetaiInput,
 } from "../domain/meal";
 import type { SpaceEnv } from "../env";
-import { createMeal, deleteMeal, setMataTabetai } from "../meals/commands";
+import { createMeal, deleteMeal, setMataTabetai, updateMeal } from "../meals/commands";
 import { runLinkPreviewJobs } from "../meals/link-previews";
 import {
   aggregateMealNames,
   aggregateMealTags,
+  getMeal,
   listMeals,
   listSuggestions,
   type MealSummary,
@@ -60,7 +61,7 @@ export const mealRoutes = new Hono<SpaceEnv>()
     return c.json(await aggregateMealTags(drizzle(c.env.DB), c.var.spaceId, q.value));
   })
   .post("/", async (c) => {
-    const parsed = parseWith(CreateMealInput, await c.req.json().catch(() => undefined));
+    const parsed = parseWith(MealContentInput, await c.req.json().catch(() => undefined));
     if (parsed.isErr()) return fail(c, parsed.error);
     const now = new Date().toISOString();
     const created = await createMeal(c.env.DB, c.var.spaceId, c.var.userId, parsed.value, now);
@@ -97,6 +98,35 @@ export const mealRoutes = new Hono<SpaceEnv>()
       updatedAt: now,
     };
     return c.json(body, 201);
+  })
+  // 編集は内容の全置き換え（ADR-008 §1）。body は作成と同じ MealContentInput で、
+  // またたべたい（PATCH）と写真（子リソース）はここでは動かない。
+  // 直せるのはスペースのメンバーなら誰でも — created_by は認可軸ではない（ADR-008 §2）
+  .put("/:mealId", async (c) => {
+    const id = parseWith(MealId, c.req.param("mealId"));
+    if (id.isErr()) return fail(c, { type: "not_found" });
+    const parsed = parseWith(MealContentInput, await c.req.json().catch(() => undefined));
+    if (parsed.isErr()) return fail(c, parsed.error);
+    const now = new Date().toISOString();
+    const targets = await updateMeal(
+      c.env.DB,
+      c.env.PHOTOS_BUCKET,
+      c.var.spaceId,
+      id.value,
+      parsed.value,
+      now,
+    );
+    if (targets === null) return fail(c, { type: "not_found" });
+    // 貼り替わった URL だけ取りに行く（同じ URL の行はそのまま — ADR-008 §5）
+    if (targets.length > 0) {
+      c.executionCtx.waitUntil(
+        runLinkPreviewJobs(c.env.DB, c.env.PHOTOS_BUCKET, c.var.spaceId, id.value, targets),
+      );
+    }
+    const meal = await getMeal(drizzle(c.env.DB), c.var.spaceId, id.value);
+    // 書いた直後に他の家族が消した。編集の結果は残っていないので「無い」を返す
+    if (meal === null) return fail(c, { type: "not_found" });
+    return c.json(meal);
   })
   .patch("/:mealId", async (c) => {
     const id = parseWith(MealId, c.req.param("mealId"));
