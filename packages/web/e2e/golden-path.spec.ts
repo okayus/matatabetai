@@ -170,6 +170,38 @@ test("register → reload → meal record with photos → suggestion → invite 
   await page.getByRole("link", { name: "ホーム" }).click();
   await expect(feed.getByText("カレー", { exact: true })).toBeVisible();
 
+  // 編集（requirements 11 / ADR-008）: 行がその場でフォームになり、内容の全置き換えで保存する。
+  // タグは張り替え（消したタグは外れる）、写真は保存を待たずその場で足せる
+  await feed.getByRole("button", { name: /編集.*肉じゃが/ }).click();
+  const editForm = page.getByRole("form", { name: "記録を編集" });
+  await expect(editForm.getByLabel("料理名")).toHaveValue("肉じゃが");
+  await expect(editForm.getByLabel("タグ")).toHaveValue("じゃがいも 牛肉");
+  await expect(editForm.getByLabel("作り方メモ")).toHaveValue("みりんを少し多めに");
+  await editForm.getByLabel("料理名").fill("肉じゃがリメイク");
+  await editForm.getByLabel("タグ").fill("じゃがいも 玉ねぎ");
+  await editForm.getByLabel("ひとことメモ").fill("翌日のほうがおいしい");
+  await editForm.getByLabel("写真", { exact: true }).setInputFiles([
+    { name: "three.png", mimeType: "image/png", buffer: PNG_8x8 },
+  ]);
+  await expect(editForm.locator("img[src*='/photos/']")).toHaveCount(2);
+  await editForm.getByRole("button", { name: "保存する" }).click();
+  await expect(editForm).toHaveCount(0);
+
+  // 永続化と、直していないものが動いていない事実（♥・写真・リンク・作り方メモは body に無い）
+  await page.reload();
+  await expect(feed.getByText("肉じゃがリメイク", { exact: true })).toBeVisible();
+  await expect(feed.getByText("翌日のほうがおいしい")).toBeVisible();
+  await expect(feed.getByText("玉ねぎ", { exact: true })).toBeVisible();
+  await expect(feed.getByText("牛肉", { exact: true })).toHaveCount(0);
+  await expect(feed.locator("img[src*='/photos/']")).toHaveCount(2);
+  await expect(
+    feed.getByRole("button", { name: /またたべたい\s*（肉じゃがリメイク）/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(feed.getByRole("link", { name: /^レシピ:/ })).toHaveAttribute(
+    "href",
+    "https://example.com/recipe/1",
+  );
+
   // カレーは用済み（残り 1 件にして、写真つきの削除を素のまま確かめる）
   page.once("dialog", (dialog) => void dialog.accept());
   await feed.getByRole("button", { name: /削除.*カレー/ }).click();
@@ -178,7 +210,7 @@ test("register → reload → meal record with photos → suggestion → invite 
   // 削除（confirm を受ける）。meal と一緒に残りの写真も消える（R2 object ごと）
   page.once("dialog", (dialog) => void dialog.accept());
   await feed.getByRole("button", { name: /削除/ }).click();
-  await expect(feed.getByText("肉じゃが", { exact: true })).toHaveCount(0);
+  await expect(feed.getByText("肉じゃがリメイク", { exact: true })).toHaveCount(0);
   await expect(page.getByText("まだ記録がありません", { exact: false })).toBeVisible();
   await expect.poll(async () => (await page.request.get(photoPaths[1]!)).status()).toBe(404);
 

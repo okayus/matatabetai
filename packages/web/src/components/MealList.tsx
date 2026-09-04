@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   deleteMeal,
   deleteMealPhoto,
@@ -6,12 +6,17 @@ import {
   linkPreviewImageUrl,
   mealPhotoUrl,
   setMataTabetai,
+  updateMeal,
+  uploadMealPhoto,
   type LinkPreviewKind,
   type Meal,
   type MealPhoto,
 } from "../api";
 import { formatEatenOn } from "../format";
-import { MEAL_TYPE_LABEL } from "../lib/meal-form";
+import { preparePhoto } from "../lib/image-prep";
+import { MEAL_TYPE_LABEL, mealFormFrom, toMealContentBody, type MealFormState } from "../lib/meal-form";
+import { sortByRecency } from "../lib/meal-order";
+import { MealFields } from "./MealFields";
 
 // みんなの記録とふりかえりで共通の一覧。日付見出しでまとめ、またたべたいトグル・削除・
 // 写真の拡大（<dialog>）までここが持つ。読み込み・並び・空表示は親の責務。
@@ -32,6 +37,22 @@ export function MealList({
   onError: (message: string | null) => void;
 }) {
   const [lightbox, setLightbox] = useState<{ meal: Meal; photo: MealPhoto } | null>(null);
+  // 直せるのは一度に 1 件（ADR-008 §7）。行をその場でフォームに変える
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // 写真は保存を待たずその場で足し引きする（meal は既にある — ADR-008 §4）
+  const setPhotos = (mealId: string, update: (photos: MealPhoto[]) => MealPhoto[]) =>
+    onMealsChange((prev) =>
+      prev.map((x) => (x.id === mealId ? { ...x, photos: update(x.photos) } : x)),
+    );
+  const saved = (updated: Meal) => {
+    // 食べた日が変わると行は別の日付見出しの下へ移る。写真はこの口では動かないので手元の値を残す
+    onMealsChange((prev) =>
+      sortByRecency(prev.map((x) => (x.id === updated.id ? { ...updated, photos: x.photos } : x))),
+    );
+    setEditingId(null);
+    onRecordsChanged?.();
+  };
 
   const toggle = async (m: Meal) => {
     onError(null);
@@ -88,9 +109,15 @@ export function MealList({
                 key={m.id}
                 spaceId={spaceId}
                 meal={m}
+                editing={editingId === m.id}
+                onEdit={() => setEditingId(m.id)}
+                onCancelEdit={() => setEditingId(null)}
+                onSaved={saved}
+                onPhotosChange={setPhotos}
                 onToggle={toggle}
                 onRemove={remove}
                 onOpenPhoto={(meal, photo) => setLightbox({ meal, photo })}
+                onError={onError}
               />
             ))}
           </ul>
@@ -117,19 +144,37 @@ function groupByEatenOn(meals: Meal[]): [string, Meal[]][] {
   return groups;
 }
 
-function MealItem({
-  spaceId,
-  meal,
-  onToggle,
-  onRemove,
-  onOpenPhoto,
-}: {
+type MealItemProps = {
   spaceId: string;
   meal: Meal;
+  editing: boolean;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSaved: (updated: Meal) => void;
+  onPhotosChange: (mealId: string, update: (photos: MealPhoto[]) => MealPhoto[]) => void;
   onToggle: (m: Meal) => void;
   onRemove: (m: Meal) => void;
   onOpenPhoto: (meal: Meal, photo: MealPhoto) => void;
-}) {
+  onError: (message: string | null) => void;
+};
+
+function MealItem(props: MealItemProps) {
+  const { spaceId, meal, editing, onEdit, onToggle, onRemove, onOpenPhoto } = props;
+  // 閉じたときに「編集」へ焦点を戻す（フォームごと消えると焦点が body に落ちる）
+  const editButton = useRef<HTMLButtonElement>(null);
+  const wasEditing = useRef(false);
+  useEffect(() => {
+    if (wasEditing.current && !editing) editButton.current?.focus();
+    wasEditing.current = editing;
+  }, [editing]);
+
+  if (editing) {
+    return (
+      <li className="list-item list-item--column">
+        <MealEditForm {...props} />
+      </li>
+    );
+  }
   return (
     <li className="list-item list-item--column">
       <div className="row">
@@ -187,12 +232,140 @@ function MealItem({
             <span aria-hidden="true">{meal.mataTabetai ? "♥" : "♡"}</span> またたべたい
             <span className="visually-hidden">（{meal.name}）</span>
           </button>
+          <button ref={editButton} type="button" className="btn btn--small" onClick={onEdit}>
+            編集<span className="visually-hidden">（{meal.name}）</span>
+          </button>
           <button type="button" className="btn btn--danger btn--small" onClick={() => onRemove(meal)}>
             削除<span className="visually-hidden">（{meal.name}）</span>
           </button>
         </div>
       </div>
     </li>
+  );
+}
+
+// 行をその場でフォームに変える（ADR-008 §7）。欄は投稿フォームと同じ MealFields で、
+// サジェストの札は出さない — 引き継ぎは「新しく記録する」ための道具で、ここに置くと
+// 自分の記録を他の回の内容で上書きできてしまう。
+// 保存は内容の全置き換え（PUT）で、写真だけは保存を待たずその場で足し引きする（§4）
+function MealEditForm({
+  spaceId,
+  meal,
+  onCancelEdit,
+  onSaved,
+  onPhotosChange,
+  onError,
+}: MealItemProps) {
+  const [form, setForm] = useState<MealFormState>(() => mealFormFrom(meal));
+  const [busy, setBusy] = useState(false);
+
+  const set = <K extends keyof MealFormState>(key: K, value: MealFormState[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setBusy(true);
+    onError(null);
+    const r = await updateMeal(spaceId, meal.id, toMealContentBody(form));
+    setBusy(false);
+    if (r.isErr()) {
+      onError(describeFailure(r.error));
+      return;
+    }
+    onSaved(r.value);
+  };
+
+  const onAddPhotos = async (e: ChangeEvent<HTMLInputElement>) => {
+    // currentTarget は await の後で使えない（投稿フォームと同じ理由で先に配列へ）
+    const files = Array.from(e.currentTarget.files ?? []);
+    e.currentTarget.value = "";
+    if (files.length === 0) return;
+    setBusy(true);
+    onError(null);
+    let failure: string | null = null;
+    for (const file of files) {
+      const prepared = await preparePhoto(file);
+      if (!prepared) {
+        failure =
+          "読み込めない写真がありました（HEIC の可能性）。iPhone は 設定 → カメラ → フォーマット → 互換性優先 にするか、JPEG で共有してください。";
+        continue;
+      }
+      const up = await uploadMealPhoto(spaceId, meal.id, prepared);
+      if (up.isOk()) onPhotosChange(meal.id, (photos) => [...photos, up.value]);
+      else failure = describeFailure(up.error);
+    }
+    setBusy(false);
+    onError(failure);
+  };
+
+  const onRemovePhoto = async (photo: MealPhoto) => {
+    if (!confirm("この写真を削除しますか？")) return;
+    onError(null);
+    const r = await deleteMealPhoto(spaceId, meal.id, photo.id);
+    if (r.isErr()) {
+      onError(describeFailure(r.error));
+      return;
+    }
+    onPhotosChange(meal.id, (photos) => photos.filter((p) => p.id !== photo.id));
+  };
+
+  return (
+    <form className="stack" aria-label="記録を編集" onSubmit={(e) => void onSubmit(e)}>
+      <MealFields
+        idPrefix={`edit-${meal.id}-`}
+        form={form}
+        onChange={set}
+        photos={
+          <div className="field">
+            <label htmlFor={`edit-${meal.id}-Photos`}>写真</label>
+            <span id={`edit-${meal.id}-PhotosHint`} className="hint">
+              写真の足し引きは「保存する」を待たずすぐ反映されます
+            </span>
+            {meal.photos.length > 0 && (
+              <ul className="photo-strip" role="list">
+                {meal.photos.map((p, i) => (
+                  <li key={p.id} className="photo-pending">
+                    <img
+                      src={mealPhotoUrl(spaceId, meal.id, p.id, p.hasThumb ? "thumb" : undefined)}
+                      alt={`${meal.name} の写真 ${i + 1}`}
+                      width={p.width}
+                      height={p.height}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    <button
+                      type="button"
+                      className="btn btn--small"
+                      disabled={busy}
+                      onClick={() => void onRemovePhoto(p)}
+                    >
+                      外す<span className="visually-hidden">（{meal.name} の写真 {i + 1}）</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <input
+              id={`edit-${meal.id}-Photos`}
+              type="file"
+              accept="image/*"
+              multiple
+              aria-describedby={`edit-${meal.id}-PhotosHint`}
+              disabled={busy}
+              onChange={(e) => void onAddPhotos(e)}
+            />
+          </div>
+        }
+      />
+      <div className="row row--between">
+        <button type="button" className="btn btn--small" disabled={busy} onClick={onCancelEdit}>
+          やめる
+        </button>
+        <button type="submit" className="btn btn--primary" disabled={busy}>
+          保存する
+        </button>
+      </div>
+    </form>
   );
 }
 

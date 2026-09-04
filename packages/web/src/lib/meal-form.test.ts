@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { MealSuggestion } from "../api";
+import type { Meal, MealSuggestion } from "../api";
 import {
   applySuggestion,
   emptyMealForm,
   formatTagInput,
+  mealFormFrom,
   parseTagInput,
   toMealContentBody,
   toMealType,
@@ -31,6 +32,26 @@ const suggestion = (over: Partial<MealSuggestion> = {}): MealSuggestion => ({
   recipeMemo: null,
   tags: [],
   photo: null,
+  ...over,
+});
+
+const meal = (over: Partial<Meal> = {}): Meal => ({
+  id: "m1",
+  name: "肉じゃが",
+  eatenOn: "2026-09-02",
+  mealType: "dinner",
+  recipeUrl: null,
+  shopUrl: null,
+  recipeMemo: null,
+  note: null,
+  mataTabetai: true,
+  tags: [],
+  photos: [],
+  previews: [],
+  createdBy: "u1",
+  createdByName: "かぞく",
+  createdAt: "2026-09-02T10:00:00.000Z",
+  updatedAt: "2026-09-02T10:00:00.000Z",
   ...over,
 });
 
@@ -142,5 +163,64 @@ describe("formatTagInput", () => {
       "牛肉",
       "玉ねぎ",
     ]);
+  });
+});
+
+// 編集フォームの初期値（ADR-008 §7）。引き継ぎ（applySuggestion）と違い、
+// 直すのは「この記録そのもの」なので、その回のもの（日付・タイミング・メモ）まで写す
+describe("mealFormFrom", () => {
+  it("記録の全部を欄に写す（メモも日付もタイミングも）", () => {
+    expect(
+      mealFormFrom(
+        meal({
+          note: "おかわりした",
+          recipeUrl: "https://example.com/recipe",
+          shopUrl: "https://shop.example.com/item",
+          recipeMemo: "みりん多め",
+          tags: [
+            { id: "t1", name: "じゃがいも" },
+            { id: "t2", name: "牛肉" },
+          ],
+        }),
+      ),
+    ).toEqual({
+      name: "肉じゃが",
+      eatenOn: "2026-09-02",
+      mealType: "dinner",
+      tags: "じゃがいも 牛肉",
+      recipeUrl: "https://example.com/recipe",
+      shopUrl: "https://shop.example.com/item",
+      recipeMemo: "みりん多め",
+      note: "おかわりした",
+    });
+  });
+
+  it("無い値は空欄（null を文字列 \"null\" にしない）", () => {
+    const form = mealFormFrom(meal({ mealType: null }));
+    expect(form.mealType).toBe("");
+    expect(form.recipeUrl).toBe("");
+    expect(form.shopUrl).toBe("");
+    expect(form.recipeMemo).toBe("");
+    expect(form.note).toBe("");
+    expect(form.tags).toBe("");
+  });
+
+  it("そのまま保存しても記録は変わらない（欄 → body の往復で値が落ちない）", () => {
+    const original = meal({
+      note: "おかわりした",
+      recipeUrl: "https://example.com/recipe",
+      recipeMemo: "みりん多め",
+      tags: [{ id: "t1", name: "じゃがいも" }],
+    });
+    expect(toMealContentBody(mealFormFrom(original))).toEqual({
+      name: "肉じゃが",
+      eatenOn: "2026-09-02",
+      mealType: "dinner",
+      recipeUrl: "https://example.com/recipe",
+      shopUrl: null,
+      recipeMemo: "みりん多め",
+      note: "おかわりした",
+      tags: ["じゃがいも"],
+    });
   });
 });
