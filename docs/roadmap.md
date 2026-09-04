@@ -27,7 +27,7 @@
 - [x] レシピ・リンク欄の 3 項目化（排他をやめる）— [ADR-007](adr/007-recipe-links-ogp.md) §1-2
 - [x] URL プレビュー（投稿時スナップショット）— [ADR-007](adr/007-recipe-links-ogp.md) §3-7、okayus-skills の新 skill 候補
 - [x] 週 / 月の集計 UI、タグクラウド — [ADR-006](adr/006-lookback-stats-tag-search.md) 改訂 §5-8
-- [ ] 投稿の編集（[requirements](requirements.md) 11）— [ADR-008](adr/008-meal-edit.md)
+- [x] 投稿の編集（[requirements](requirements.md) 11）— [ADR-008](adr/008-meal-edit.md)
 - [ ] 写真のカルーセル（[requirements](requirements.md) 12）— 2026-09-03 追加
 - [ ] 写真グリッドのタイムライン（[requirements](requirements.md) 13）— 2026-09-03 追加
 
