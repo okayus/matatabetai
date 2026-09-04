@@ -13,6 +13,7 @@ import {
   type MealPhoto,
 } from "../api";
 import { formatEatenOn } from "../format";
+import { clampIndex, snapIndex } from "../lib/carousel";
 import { preparePhoto } from "../lib/image-prep";
 import { MEAL_TYPE_LABEL, mealFormFrom, toMealContentBody, type MealFormState } from "../lib/meal-form";
 import { sortByRecency } from "../lib/meal-order";
@@ -36,7 +37,9 @@ export function MealList({
   onRecordsChanged?: (() => void) | undefined;
   onError: (message: string | null) => void;
 }) {
-  const [lightbox, setLightbox] = useState<{ meal: Meal; photo: MealPhoto } | null>(null);
+  // 開いている写真は「どの記録の何枚目か」で持つ。meal そのものを控えると、開いている間に
+  // 写真が減ったとき（拡大したまま削除）に古い配列を見てしまう
+  const [lightbox, setLightbox] = useState<{ mealId: string; index: number } | null>(null);
   // 直せるのは一度に 1 件（ADR-008 §7）。行をその場でフォームに変える
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -78,24 +81,28 @@ export function MealList({
     onMealsChange((prev) => prev.filter((x) => x.id !== m.id));
     onRecordsChanged?.();
   };
-  const removePhoto = async (sel: { meal: Meal; photo: MealPhoto }) => {
+  const removePhoto = async (meal: Meal, photo: MealPhoto) => {
     if (!confirm("この写真を削除しますか？")) return;
     onError(null);
-    const r = await deleteMealPhoto(spaceId, sel.meal.id, sel.photo.id);
+    const r = await deleteMealPhoto(spaceId, meal.id, photo.id);
     if (r.isErr()) {
       onError(describeFailure(r.error));
       return;
     }
     onMealsChange((prev) =>
       prev.map((x) =>
-        x.id === sel.meal.id
-          ? { ...x, photos: x.photos.filter((p) => p.id !== sel.photo.id) }
-          : x,
+        x.id === meal.id ? { ...x, photos: x.photos.filter((p) => p.id !== photo.id) } : x,
       ),
     );
+    // 消したら閉じる（残りを見るのは開き直せばよい。消し続けるより一度カードへ戻る方が迷わない）
     setLightbox(null);
     onRecordsChanged?.();
   };
+
+  // 一覧の配列は親が持つので、拡大中の記録も毎回そこから引き直す。
+  // 記録ごと消えた・写真が 0 枚になったときは null → dialog が閉じる
+  const opened = lightbox ? meals.find((m) => m.id === lightbox.mealId) : undefined;
+  const lightboxMeal = opened && opened.photos.length > 0 ? opened : null;
 
   return (
     <>
@@ -116,7 +123,7 @@ export function MealList({
                 onPhotosChange={setPhotos}
                 onToggle={toggle}
                 onRemove={remove}
-                onOpenPhoto={(meal, photo) => setLightbox({ meal, photo })}
+                onOpenPhoto={(meal, index) => setLightbox({ mealId: meal.id, index })}
                 onError={onError}
               />
             ))}
@@ -125,7 +132,8 @@ export function MealList({
       ))}
       <PhotoLightbox
         spaceId={spaceId}
-        selected={lightbox}
+        meal={lightboxMeal}
+        openAt={lightbox?.index ?? 0}
         onClose={() => setLightbox(null)}
         onDelete={removePhoto}
       />
@@ -154,7 +162,7 @@ type MealItemProps = {
   onPhotosChange: (mealId: string, update: (photos: MealPhoto[]) => MealPhoto[]) => void;
   onToggle: (m: Meal) => void;
   onRemove: (m: Meal) => void;
-  onOpenPhoto: (meal: Meal, photo: MealPhoto) => void;
+  onOpenPhoto: (meal: Meal, index: number) => void;
   onError: (message: string | null) => void;
 };
 
@@ -182,26 +190,7 @@ function MealItem(props: MealItemProps) {
         {meal.mealType && <span className="badge">{MEAL_TYPE_LABEL[meal.mealType]}</span>}
       </div>
       {meal.photos.length > 0 && (
-        <ul className="photo-strip" role="list">
-          {meal.photos.map((p, i) => (
-            <li key={p.id}>
-              <button
-                type="button"
-                className="photo-thumb"
-                onClick={() => onOpenPhoto(meal, p)}
-              >
-                <img
-                  src={mealPhotoUrl(spaceId, meal.id, p.id, p.hasThumb ? "thumb" : undefined)}
-                  alt={`${meal.name} の写真 ${i + 1} を拡大`}
-                  width={p.width}
-                  height={p.height}
-                  loading="lazy"
-                  decoding="async"
-                />
-              </button>
-            </li>
-          ))}
-        </ul>
+        <MealPhotos spaceId={spaceId} meal={meal} onOpenPhoto={onOpenPhoto} />
       )}
       {meal.tags.length > 0 && (
         <div className="row">
@@ -431,48 +420,194 @@ function linkLabel(url: string): string {
   }
 }
 
-// 拡大表示。<dialog> の showModal で開く（Esc は native、背景タップは e.target === dialog で判定）
+// 写真の送り（requirements 12）。横スクロール + scroll-snap に任せる — 指のスワイプの慣性も
+// 端の跳ね返りもブラウザのものが一番よく、JS の drag 実装より触る量が少ない。位置は scrollLeft
+// から数える: scrollsnapchange / scroll-initial-target / scroll-state クエリはどれも Chrome だけ
+// （modern-web-guidance 2026-09-04）で、この家族は iPhone と Android の両方を使う
+function useCarousel(count: number) {
+  const ref = useRef<HTMLUListElement>(null);
+  const [scrolled, setScrolled] = useState(0);
+  return {
+    ref,
+    index: clampIndex(scrolled, count),
+    onScroll: () => {
+      const el = ref.current;
+      if (el) setScrolled(snapIndex(el.scrollLeft, el.clientWidth, count));
+    },
+    // behavior 未指定（"auto"）は CSS の scroll-behavior に従う = 動きを減らす設定なら滑らかにしない
+    goTo: (next: number, behavior: ScrollBehavior = "auto") => {
+      const el = ref.current;
+      if (!el) return;
+      const target = clampIndex(next, count);
+      setScrolled(target); // 滑らかに動く間も札は先に合わせる（押した手応えを遅らせない）
+      el.scrollTo({ left: target * el.clientWidth, behavior });
+    },
+  };
+}
+
+// ← 2 / 3 → の 1 行。指のない環境（マウス・キーボード）のための、スワイプと同じ動きの入口。
+// 写真には重ねない（小さい画面では料理が隠れる）。端では aria-disabled にとどめる —
+// disabled にすると押した瞬間にボタンが無効になり、焦点が body へ落ちて送る手が止まる
+function CarouselNav({
+  index,
+  count,
+  onGoTo,
+}: {
+  index: number;
+  count: number;
+  onGoTo: (next: number) => void;
+}) {
+  const step = (delta: number) => {
+    const next = index + delta;
+    if (next >= 0 && next < count) onGoTo(next);
+  };
+  return (
+    <div className="carousel-nav">
+      <button
+        type="button"
+        className="btn btn--small"
+        aria-disabled={index === 0}
+        onClick={() => step(-1)}
+      >
+        <span aria-hidden="true">←</span>
+        <span className="visually-hidden">前の写真</span>
+      </button>
+      <span className="carousel-count">
+        {index + 1} / {count}
+      </span>
+      <button
+        type="button"
+        className="btn btn--small"
+        aria-disabled={index === count - 1}
+        onClick={() => step(1)}
+      >
+        <span aria-hidden="true">→</span>
+        <span className="visually-hidden">次の写真</span>
+      </button>
+    </div>
+  );
+}
+
+// カードの写真。1 枚なら切り抜かずそのまま出す（そろえる相手がいないのに正方形に切ると、
+// 写した料理の端が理由もなく落ちる）。複数枚は正方形にそろえて送れるようにする —
+// 縦横の混ざった写真で高さが跳ねると、送るたびに下の文章が動いて読めない。
+// タイルではなく本体（1600px）を出す: カード幅いっぱいだと 320px のサムネは粗い。
+// サムネは記録フォームと編集フォームの小さな一覧が使い続ける
+function MealPhotos({
+  spaceId,
+  meal,
+  onOpenPhoto,
+}: {
+  spaceId: string;
+  meal: Meal;
+  onOpenPhoto: (meal: Meal, index: number) => void;
+}) {
+  const carousel = useCarousel(meal.photos.length);
+  const single = meal.photos.length === 1;
+  return (
+    <div className="stack stack--tight">
+      <ul
+        ref={carousel.ref}
+        className={single ? "photo-carousel photo-carousel--single" : "photo-carousel"}
+        role="list"
+        onScroll={carousel.onScroll}
+      >
+        {meal.photos.map((p, i) => (
+          <li key={p.id}>
+            <button type="button" className="photo-slide" onClick={() => onOpenPhoto(meal, i)}>
+              <img
+                src={mealPhotoUrl(spaceId, meal.id, p.id)}
+                alt={`${meal.name} の写真 ${i + 1} を拡大`}
+                width={p.width}
+                height={p.height}
+                loading="lazy"
+                decoding="async"
+              />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {!single && (
+        <CarouselNav index={carousel.index} count={meal.photos.length} onGoTo={carousel.goTo} />
+      )}
+    </div>
+  );
+}
+
+// 拡大表示。<dialog> の showModal で開く（Esc は native、背景タップは e.target === dialog で判定）。
+// 中でも同じカルーセルで送れる（指・← →・キーボードの矢印）。開くのはタップした 1 枚から
 function PhotoLightbox({
   spaceId,
-  selected,
+  meal,
+  openAt,
   onClose,
   onDelete,
 }: {
   spaceId: string;
-  selected: { meal: Meal; photo: MealPhoto } | null;
+  meal: Meal | null;
+  openAt: number;
   onClose: () => void;
-  onDelete: (sel: { meal: Meal; photo: MealPhoto }) => void;
+  onDelete: (meal: Meal, photo: MealPhoto) => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const photos = meal?.photos ?? [];
+  const carousel = useCarousel(photos.length);
+  const { goTo } = carousel;
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (selected && !dialog.open) dialog.showModal();
-    if (!selected && dialog.open) dialog.close();
-  }, [selected]);
+    if (meal && !dialog.open) {
+      dialog.showModal();
+      goTo(openAt, "instant"); // 開いた瞬間は送らない。タップした 1 枚がそこにある
+    }
+    if (!meal && dialog.open) dialog.close();
+  }, [meal, openAt, goTo]);
+
+  const current = photos[carousel.index];
   return (
     <dialog
       ref={ref}
       className="lightbox"
-      aria-label={selected ? `${selected.meal.name} の写真` : "写真の拡大表示"}
+      aria-label={meal ? `${meal.name} の写真` : "写真の拡大表示"}
       onClose={onClose}
       onClick={(e) => {
         if (e.target === ref.current) onClose();
       }}
+      onKeyDown={(e) => {
+        // 焦点はボタンにあるので矢印キーは空いている。Esc は dialog が持つ
+        if (e.key === "ArrowRight") carousel.goTo(carousel.index + 1);
+        if (e.key === "ArrowLeft") carousel.goTo(carousel.index - 1);
+      }}
     >
-      {selected && (
+      {meal && current && (
         <div className="stack stack--tight">
-          <img
-            src={mealPhotoUrl(spaceId, selected.meal.id, selected.photo.id)}
-            alt={`${selected.meal.name} の写真`}
-            width={selected.photo.width}
-            height={selected.photo.height}
-          />
+          <ul
+            ref={carousel.ref}
+            className="photo-carousel photo-carousel--full"
+            role="list"
+            onScroll={carousel.onScroll}
+          >
+            {photos.map((p, i) => (
+              <li key={p.id}>
+                <img
+                  src={mealPhotoUrl(spaceId, meal.id, p.id)}
+                  alt={`${meal.name} の写真 ${i + 1}`}
+                  width={p.width}
+                  height={p.height}
+                  loading={i === openAt ? "eager" : "lazy"}
+                  decoding="async"
+                />
+              </li>
+            ))}
+          </ul>
+          {photos.length > 1 && (
+            <CarouselNav index={carousel.index} count={photos.length} onGoTo={carousel.goTo} />
+          )}
           <div className="row row--between">
             <button
               type="button"
               className="btn btn--danger btn--small"
-              onClick={() => onDelete(selected)}
+              onClick={() => onDelete(meal, current)}
             >
               写真を削除
             </button>

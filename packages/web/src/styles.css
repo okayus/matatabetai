@@ -251,29 +251,11 @@
     background: var(--color-danger-bg);
     color: var(--color-danger);
   }
+  /* 記録フォーム・編集フォームの小さな一覧（足す前・引く前の確認用。ここはタイルのまま） */
   .photo-strip {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
-  }
-  .photo-thumb {
-    display: block;
-    inline-size: 5.5rem;
-    aspect-ratio: 1;
-    padding: 0;
-    border: 1px solid var(--color-border);
-    border-radius: calc(var(--radius) / 2);
-    background: none;
-    overflow: hidden;
-    cursor: pointer;
-  }
-  /* width/height 属性は本体の縦横比。タイルは正方形に切り抜く */
-  .photo-thumb img,
-  .photo-pending img {
-    display: block;
-    inline-size: 100%;
-    block-size: 100%;
-    object-fit: cover;
   }
   .photo-pending {
     display: flex;
@@ -281,10 +263,70 @@
     gap: var(--space-1);
     inline-size: 5.5rem;
   }
+  /* width/height 属性は本体の縦横比。タイルは正方形に切り抜く */
   .photo-pending img {
+    display: block;
+    inline-size: 100%;
     aspect-ratio: 1;
+    object-fit: cover;
     border: 1px solid var(--color-border);
     border-radius: calc(var(--radius) / 2);
+  }
+  /* 一覧の写真（requirements 12）。送りは横スクロール + scroll-snap に任せる。
+     スライドは gap 0 の 100% 幅 = 送り幅が scroller の幅そのものなので、
+     いま何枚目かは scrollLeft ÷ 幅 で数えられる（src/lib/carousel.ts） */
+  .photo-carousel {
+    display: flex;
+    overflow-x: auto;
+    overscroll-behavior-x: contain; /* 端まで送っても背後のページや「戻る」に流さない */
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none; /* 送るのは指と ← →。写真の下の細い横棒は邪魔なだけ */
+  }
+  .photo-carousel > li {
+    flex: 0 0 100%;
+    scroll-snap-align: start;
+  }
+  /* 複数枚は正方形にそろえる（縦横が混ざっても、送るたびに下の文章が動かない） */
+  .photo-slide {
+    display: block;
+    inline-size: 100%;
+    aspect-ratio: 1;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: none;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .photo-slide img {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+  /* 1 枚だけの投稿はそろえる相手がいない。写真そのままの縦横比で出す。
+     画面を覆うほど縦長のものだけ 60dvh で止める（余った分は切る — 白帯で埋めるより、
+     切れているのが見える方が「拡大して全部見る」に手が伸びる） */
+  .photo-carousel--single .photo-slide {
+    aspect-ratio: auto;
+  }
+  .photo-carousel--single .photo-slide img {
+    block-size: auto;
+    max-block-size: 60dvh;
+  }
+  .carousel-nav {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  /* 送りきった端。押しても動かないことを見せるが、focus は残す（disabled にしない） */
+  .carousel-nav .btn[aria-disabled="true"] {
+    opacity: 0.4;
+  }
+  .carousel-count {
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums; /* 桁が変わっても札の幅が動かない */
   }
   /* URL プレビュー（ADR-007 §5）。カードでもプレーンリンクでも同じ縦並びに収める */
   .link-list {
@@ -465,6 +507,12 @@
   .lightbox::backdrop {
     background: rgb(0 0 0 / 0.8);
   }
+  /* 拡大した中の送り。1 枚を丸ごと見る場なので切り抜かない */
+  .photo-carousel--full > li {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
   .lightbox img {
     display: block;
     max-inline-size: 100%;
@@ -473,6 +521,10 @@
     block-size: auto;
     margin-inline: auto;
     border-radius: var(--radius);
+  }
+  /* 拡大表示の背後は明暗どちらでも暗い。札だけは白で置く（ボタンは surface を持っている） */
+  .lightbox .carousel-count {
+    color: #ffffff;
   }
 }
 
@@ -500,10 +552,14 @@
   }
 }
 
-/* タグクラウドから一覧へ移るときのスクロール。scrollIntoView() は既定でこの値に従うので、
+/* タグクラウドから一覧へ移るときのスクロールと、写真を ← → で送るときの動き。
+   scrollIntoView() / scrollTo() は既定（behavior: "auto"）でこの値に従うので、
    動きを減らす設定の端末では滑らかにしない */
 @media (prefers-reduced-motion: no-preference) {
   :root {
+    scroll-behavior: smooth;
+  }
+  .photo-carousel {
     scroll-behavior: smooth;
   }
 }
