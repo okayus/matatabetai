@@ -10,6 +10,8 @@ import { enableVirtualAuthenticator } from "./helpers/webauthn";
 const FIXTURE_URL = `http://127.0.0.1:${E2E_PORT}/e2e-fixture/`;
 // OGP を出さないページ（見出しは <title>、画像なし）
 const TITLE_ONLY_URL = `http://127.0.0.1:${E2E_PORT}/e2e-fixture/title-only.html`;
+// 貼り替え先（og:image を持たない別ページ）
+const SWAPPED_URL = `http://127.0.0.1:${E2E_PORT}/e2e-fixture/swapped.html`;
 // 何も listen していないポート = 取りに行けない URL（リンク切れ・bot ブロック相当）
 const UNREACHABLE_URL = "http://127.0.0.1:5199/blocked";
 
@@ -64,6 +66,30 @@ test("OGP が取れた URL はカードになり、取れない URL はプレー
     UNREACHABLE_URL,
   );
   expect((await page.request.get(imagePath.replace("/recipe/", "/shop/"))).status()).toBe(404);
+
+  // 編集で URL を貼り替えると、そのぶんだけ取り直す（ADR-008 §5）。旧行は捨てられ、
+  // 一緒に旧 og:image も R2 から消えるので、同じ配信 URL が 404 になる
+  await feed.getByRole("button", { name: /編集/ }).click();
+  const editForm = page.getByRole("form", { name: "記録を編集" });
+  await expect(editForm.getByLabel("レシピ URL")).toHaveValue(FIXTURE_URL);
+  await editForm.getByLabel("レシピ URL").fill(SWAPPED_URL);
+  await editForm.getByRole("button", { name: "保存する" }).click();
+  await expect(editForm).toHaveCount(0);
+
+  const swappedCard = feed.getByRole("link", { name: /e2e レシピ: 貼り替え後のカレー/ });
+  await expect(async () => {
+    await page.reload();
+    await expect(swappedCard).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+  await expect(swappedCard).toHaveAttribute("href", SWAPPED_URL);
+  await expect(card).toHaveCount(0);
+  await expect(swappedCard.locator("img")).toHaveCount(0);
+  expect((await page.request.get(imagePath)).status()).toBe(404);
+  // 触っていない お店・商品 の欄はそのまま（同じ URL の行は取り直さない）
+  await expect(feed.getByRole("link", { name: /^お店・商品:/ })).toHaveAttribute(
+    "href",
+    UNREACHABLE_URL,
+  );
 
   // OGP を出さないページは <title> を見出しにした画像なしのカードになる。
   // og:* → <title> の fallback は HTMLRewriter のセレクタが実際に当たっているかの検査でもある

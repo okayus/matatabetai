@@ -1,4 +1,4 @@
-import type { MealContentBody, MealSuggestion, MealTag, MealType } from "../api";
+import type { Meal, MealContentBody, MealSuggestion, MealTag, MealType } from "../api";
 
 // 投稿フォームの入力状態。DOM ではなくこの値が唯一の出所（サジェストが上書きするので
 // 非制御のままでは引き継ぎができない）。送信直前に MealContentBody へ畳む
@@ -61,6 +61,21 @@ export function applySuggestion(form: MealFormState, suggestion: MealSuggestion)
     recipeUrl: suggestion.recipeUrl ?? "",
     shopUrl: suggestion.shopUrl ?? "",
     recipeMemo: suggestion.recipeMemo ?? "",
+  };
+}
+
+// 編集フォームの初期値（ADR-008 §7）。サジェストの引き継ぎと違い、その回のものも含めて
+// 記録の全部を写す — 直すのは「この記録そのもの」で、複製ではないから
+export function mealFormFrom(meal: Meal): MealFormState {
+  return {
+    name: meal.name,
+    eatenOn: meal.eatenOn,
+    mealType: meal.mealType ?? "",
+    tags: formatTagInput(meal.tags),
+    recipeUrl: meal.recipeUrl ?? "",
+    shopUrl: meal.shopUrl ?? "",
+    recipeMemo: meal.recipeMemo ?? "",
+    note: meal.note ?? "",
   };
 }
 

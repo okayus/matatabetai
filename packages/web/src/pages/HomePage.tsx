@@ -17,18 +17,13 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { Link } from "../components/Link";
+import { MealFields } from "../components/MealFields";
 import { MealList } from "../components/MealList";
 import { TagFilter } from "../components/TagFilter";
 import { formatEatenOn, formatShortDate, todayLocalDate } from "../format";
 import { preparePhoto, type PreparedPhoto } from "../lib/image-prep";
-import {
-  applySuggestion,
-  emptyMealForm,
-  toMealContentBody,
-  MEAL_TYPES,
-  MEAL_TYPE_LABEL,
-  type MealFormState,
-} from "../lib/meal-form";
+import { applySuggestion, emptyMealForm, toMealContentBody, type MealFormState } from "../lib/meal-form";
+import { sortByRecency } from "../lib/meal-order";
 import { primarySpace } from "../lib/space";
 
 export function HomePage({ me }: { me: Me }) {
@@ -66,11 +61,7 @@ function MealsSection({ space }: { space: SpaceSummary }) {
 
   // eaten_on DESC, created_at DESC のサーバー順を、手元の挿入でも保つ
   const insert = (m: Meal) => {
-    setMeals((prev) =>
-      [m, ...(prev ?? [])].sort(
-        (a, b) => b.eatenOn.localeCompare(a.eatenOn) || b.createdAt.localeCompare(a.createdAt),
-      ),
-    );
+    setMeals((prev) => sortByRecency([m, ...(prev ?? [])]));
     bumpVersion();
   };
 
@@ -194,161 +185,63 @@ function MealForm({
   return (
     <form className="card stack" aria-labelledby="mealFormHeading" onSubmit={(e) => void onSubmit(e)}>
       <h2 id="mealFormHeading">たべたものを記録</h2>
-      <div className="field">
-        <label htmlFor="mealName">料理名</label>
-        <input
-          id="mealName"
-          name="name"
-          required
-          maxLength={100}
-          placeholder="例: 肉じゃが"
-          value={form.name}
-          onChange={(e) => set("name", e.currentTarget.value)}
-        />
-      </div>
-      <SuggestionPicker
-        spaceId={spaceId}
-        reloadKey={suggestionKey}
-        onPick={(s) => {
-          setForm((f) => applySuggestion(f, s));
-          setCarriedOver(s.name);
-        }}
-      />
-      {/* 空でも要素を残す（後から現れる live region は読み上げられないことがある） */}
-      <p className="hint status-line" role="status">
-        {carriedOver && `「${carriedOver}」の前回の内容を引き継ぎました。日付とひとことメモは今回の分をどうぞ。`}
-      </p>
-      <div className="row">
-        <div className="field field--grow">
-          <label htmlFor="mealEatenOn">食べた日</label>
-          <input
-            id="mealEatenOn"
-            name="eatenOn"
-            type="date"
-            required
-            value={form.eatenOn}
-            onChange={(e) => set("eatenOn", e.currentTarget.value)}
-          />
-        </div>
-        <div className="field field--grow">
-          <label htmlFor="mealType">タイミング</label>
-          <select
-            id="mealType"
-            name="mealType"
-            value={form.mealType}
-            onChange={(e) => set("mealType", e.currentTarget.value)}
-          >
-            <option value="">指定なし</option>
-            {MEAL_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {MEAL_TYPE_LABEL[t]}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-      <div className="field">
-        <label htmlFor="mealTags">タグ</label>
-        <span id="mealTagsHint" className="hint">
-          食材などをスペースや読点で区切って（例: じゃがいも 玉ねぎ）
-        </span>
-        <input
-          id="mealTags"
-          name="tags"
-          aria-describedby="mealTagsHint"
-          value={form.tags}
-          onChange={(e) => set("tags", e.currentTarget.value)}
-        />
-      </div>
-      <div className="field">
-        <label htmlFor="mealPhotos">写真</label>
-        <span id="mealPhotosHint" className="hint">
-          複数選べます。この端末で縮小してから送ります（位置情報は残りません）
-        </span>
-        <input
-          id="mealPhotos"
-          type="file"
-          accept="image/*"
-          multiple
-          aria-describedby="mealPhotosHint"
-          disabled={busy}
-          onChange={(e) => void onPickPhotos(e)}
-        />
-      </div>
-      {pending.length > 0 && (
-        <ul className="photo-strip" role="list">
-          {pending.map((p, i) => (
-            <li key={p.key} className="photo-pending">
-              <img src={p.previewUrl} alt={`選択中の写真 ${i + 1}`} />
-              <button
-                type="button"
-                className="btn btn--small"
+      <MealFields
+        idPrefix="newMeal"
+        form={form}
+        onChange={set}
+        afterName={
+          <>
+            <SuggestionPicker
+              spaceId={spaceId}
+              reloadKey={suggestionKey}
+              onPick={(s) => {
+                setForm((f) => applySuggestion(f, s));
+                setCarriedOver(s.name);
+              }}
+            />
+            {/* 空でも要素を残す（後から現れる live region は読み上げられないことがある） */}
+            <p className="hint status-line" role="status">
+              {carriedOver && `「${carriedOver}」の前回の内容を引き継ぎました。日付とひとことメモは今回の分をどうぞ。`}
+            </p>
+          </>
+        }
+        photos={
+          <>
+            <div className="field">
+              <label htmlFor="newMealPhotos">写真</label>
+              <span id="newMealPhotosHint" className="hint">
+                複数選べます。この端末で縮小してから送ります（位置情報は残りません）
+              </span>
+              <input
+                id="newMealPhotos"
+                type="file"
+                accept="image/*"
+                multiple
+                aria-describedby="newMealPhotosHint"
                 disabled={busy}
-                onClick={() => removePending(p.key)}
-              >
-                外す<span className="visually-hidden">（選択中の写真 {i + 1}）</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {/* 3 つは排他ではない（ADR-007 §1）。関連する入力のまとまりなので fieldset + legend */}
-      <fieldset className="fieldgroup" aria-describedby="mealLinksHint">
-        <legend>レシピ・リンク</legend>
-        <p id="mealLinksHint" className="hint">
-          どれも任意です。レシピを見ながら自分のアレンジも一緒に残せます
-        </p>
-        <div className="stack">
-          <div className="field">
-            <label htmlFor="mealRecipeUrl">レシピ URL</label>
-            <input
-              id="mealRecipeUrl"
-              name="recipeUrl"
-              type="url"
-              placeholder="https://…"
-              maxLength={2048}
-              value={form.recipeUrl}
-              onChange={(e) => set("recipeUrl", e.currentTarget.value)}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="mealShopUrl">お店・商品 URL</label>
-            <input
-              id="mealShopUrl"
-              name="shopUrl"
-              type="url"
-              placeholder="https://…"
-              maxLength={2048}
-              value={form.shopUrl}
-              onChange={(e) => set("shopUrl", e.currentTarget.value)}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="mealRecipeMemo">作り方メモ</label>
-            <textarea
-              id="mealRecipeMemo"
-              name="recipeMemo"
-              rows={4}
-              maxLength={5000}
-              placeholder="例: みりんを少し多めに"
-              value={form.recipeMemo}
-              onChange={(e) => set("recipeMemo", e.currentTarget.value)}
-            />
-          </div>
-        </div>
-      </fieldset>
-      <div className="field">
-        <label htmlFor="mealNote">ひとことメモ</label>
-        <textarea
-          id="mealNote"
-          name="note"
-          rows={2}
-          maxLength={1000}
-          placeholder="例: 子どもがおかわりした"
-          value={form.note}
-          onChange={(e) => set("note", e.currentTarget.value)}
-        />
-      </div>
+                onChange={(e) => void onPickPhotos(e)}
+              />
+            </div>
+            {pending.length > 0 && (
+              <ul className="photo-strip" role="list">
+                {pending.map((p, i) => (
+                  <li key={p.key} className="photo-pending">
+                    <img src={p.previewUrl} alt={`選択中の写真 ${i + 1}`} />
+                    <button
+                      type="button"
+                      className="btn btn--small"
+                      disabled={busy}
+                      onClick={() => removePending(p.key)}
+                    >
+                      外す<span className="visually-hidden">（選択中の写真 {i + 1}）</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        }
+      />
       <button type="submit" className="btn btn--primary" disabled={busy}>
         記録する
       </button>
