@@ -1,7 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
 import {
   createMeal,
-  createSpace,
   describeFailure,
   listMeals,
   listMealSuggestions,
@@ -15,36 +22,66 @@ import {
   type MealTag,
   type SpaceSummary,
 } from "../api";
-import { useAuth } from "../auth";
 import { Link } from "../components/Link";
 import { MealFields } from "../components/MealFields";
 import { MealList } from "../components/MealList";
 import { TagFilter } from "../components/TagFilter";
 import { formatEatenOn, formatShortDate, todayLocalDate } from "../format";
 import { preparePhoto, type PreparedPhoto } from "../lib/image-prep";
+import {
+  EMPTY_MEAL_FILTER,
+  isEmptyMealFilter,
+  mealFilterSearch,
+  parseMealFilter,
+  toggleFilterTag,
+  type MealFilter,
+} from "../lib/meal-filter";
 import { applySuggestion, emptyMealForm, toMealContentBody, type MealFormState } from "../lib/meal-form";
 import { sortByRecency } from "../lib/meal-order";
 import { primarySpace } from "../lib/space";
+import { navigate, useSearch } from "../router";
 
+// トップページ（requirements 15）: 検索と写真の壁が主役。h1 はスペース名 — 家族のアルバムの題
+// （ADR-009 §5。挨拶とスペース一覧はアカウントへ）。絞り込みの状態は URL のクエリが持つ（§4）:
+// 引っ張り更新で消えず、ふりかえりからの遷移が URL で渡せ、「ホーム」リンク（= 素の /）が解除になる
 export function HomePage({ me }: { me: Me }) {
-  const ownsSpace = me.spaces.some((s) => s.role === "owner");
   const primary = primarySpace(me.spaces);
+  const search = useSearch();
+  const filter = useMemo(() => parseMealFilter(search), [search]);
+  if (!primary) {
+    return (
+      <section className="stack">
+        <h1>ホーム</h1>
+        <p className="muted">
+          まだどのスペースにも入っていません。<Link href="/account">アカウント</Link>{" "}
+          で自分のスペースを作るか、家族から招待リンクをもらってください。
+        </p>
+      </section>
+    );
+  }
   return (
-    <section className="stack">
-      <h1>こんにちは、{me.displayName} さん</h1>
-      {primary ? (
-        <MealsSection key={primary.id} space={primary} />
-      ) : (
-        <p className="muted">まだどのスペースにも入っていません。</p>
-      )}
-      <SpacesSection spaces={me.spaces} />
-      {!ownsSpace && <CreateSpaceForm />}
-    </section>
+    <MealsSection
+      key={primary.id}
+      space={primary}
+      filter={filter}
+      // 札の切り替え・テキストの確定は履歴を汚さない（「戻る」は前のページへ）
+      onFilterChange={(next) => navigate(`/${mealFilterSearch(next)}`, { replace: true })}
+    />
   );
 }
 
-function MealsSection({ space }: { space: SpaceSummary }) {
+function MealsSection({
+  space,
+  filter,
+  onFilterChange,
+}: {
+  space: SpaceSummary;
+  filter: MealFilter;
+  onFilterChange: (next: MealFilter) => void;
+}) {
   const [meals, setMeals] = useState<Meal[] | null>(null);
+  // 絞り込みの語彙（よく使う順）。記録すると増えるので、送れたら読み直す
+  const [tagList, setTagList] = useState<MealTag[]>([]);
   // タイムラインの見せ方（requirements 13）。既定は写真だけの壁（requirements 15）で、
   // 料理名・タグ・メモまで読みたければ くわしく に切り替える
   const [view, setView] = useState<"list" | "grid">("grid");
@@ -52,23 +89,44 @@ function MealsSection({ space }: { space: SpaceSummary }) {
   const [composing, setComposing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    const r = await listMeals(space.id);
-    if (r.isOk()) setMeals(r.value);
-    else setError(describeFailure(r.error));
+  const loadTags = useCallback(async () => {
+    const r = await listSpaceTags(space.id);
+    if (r.isOk()) setTagList(r.value);
   }, [space.id]);
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadTags();
+  }, [loadTags]);
+
+  // 絞り込みを続けて切り替えたときに、古い応答で上書きしない
+  useEffect(() => {
+    let live = true;
+    void listMeals(space.id, filter).then((r) => {
+      if (!live) return;
+      if (r.isOk()) setMeals(r.value);
+      else setError(describeFailure(r.error));
+    });
+    return () => {
+      live = false;
+    };
+  }, [space.id, filter]);
 
   // eaten_on DESC, created_at DESC のサーバー順を、手元の挿入でも保つ
   const insert = (m: Meal) => setMeals((prev) => sortByRecency([m, ...(prev ?? [])]));
+  const onCreated = (m: Meal) => {
+    insert(m);
+    void loadTags();
+    // 絞り込み中に記録すると、新しい記録は絞り込みに合わず壁に出ないことが多い。
+    // 既定に戻せば URL の変化が一覧を読み直し、新しい記録は先頭にいる（ADR-009 §6）
+    if (!isEmptyMealFilter(filter)) onFilterChange(EMPTY_MEAL_FILTER);
+  };
 
   return (
     <>
       <section className="card stack" aria-labelledby="feedHeading">
         <div className="row row--between">
-          <h2 id="feedHeading">みんなの記録</h2>
+          <h1 id="feedHeading" className="feed-title">
+            {space.name}
+          </h1>
           {/* 見出しの横に収まる短い表示（スマホ幅で折り返すと写真が 1 行ぶん下がる）。名前は読み上げ用に補う */}
           <button
             type="button"
@@ -79,6 +137,13 @@ function MealsSection({ space }: { space: SpaceSummary }) {
             ＋ 記録する
           </button>
         </div>
+        <MealSearch
+          filter={filter}
+          tagList={tagList}
+          view={view}
+          onFilterChange={onFilterChange}
+          onViewChange={setView}
+        />
         {error && (
           <p role="alert" className="alert">
             {error}
@@ -87,45 +152,120 @@ function MealsSection({ space }: { space: SpaceSummary }) {
         {meals === null ? (
           <p className="muted">読み込み中…</p>
         ) : meals.length === 0 ? (
-          <p className="muted">まだ記録がありません。最初のたべたものを記録してみましょう。</p>
+          <p className="muted">{emptyMessage(filter)}</p>
         ) : (
-          <>
-            <fieldset className="chips">
-              <legend className="visually-hidden">記録の見せ方</legend>
-              <button
-                type="button"
-                className="chip"
-                aria-pressed={view === "grid"}
-                onClick={() => setView("grid")}
-              >
-                写真だけ
-              </button>
-              <button
-                type="button"
-                className="chip"
-                aria-pressed={view === "list"}
-                onClick={() => setView("list")}
-              >
-                くわしく
-              </button>
-            </fieldset>
-            <MealList
-              spaceId={space.id}
-              meals={meals}
-              view={view}
-              onMealsChange={(update) => setMeals((prev) => update(prev ?? []))}
-              onError={setError}
-            />
-          </>
+          <MealList
+            spaceId={space.id}
+            meals={meals}
+            view={view}
+            onMealsChange={(update) => setMeals((prev) => update(prev ?? []))}
+            onError={setError}
+          />
         )}
       </section>
       <MealFormDialog
         spaceId={space.id}
         open={composing}
         onClose={() => setComposing(false)}
-        onCreated={insert}
+        onCreated={onCreated}
       />
     </>
+  );
+}
+
+function emptyMessage(filter: MealFilter): string {
+  if (filter.q !== "" || filter.tags.length > 0) return "この絞り込みに合う記録はまだありません。";
+  if (filter.mataTabetai) return "またたべたいはまだありません。「くわしく」で ♡ を押すとここに並びます。";
+  return "まだ記録がありません。最初のたべたものを記録してみましょう。";
+}
+
+// 検索と絞り込み（ADR-009 §1-2）。料理名は「さがす」（Enter・スマホの検索キー）で確定し、
+// 空にした瞬間だけ即座に解除する — 消したのに前の結果が残るのは変（× でも Backspace でも）。
+// ♥ とタグの札は押した瞬間に効く。「くわしく」は絞り込みではなく描き方なので URL には出ない
+function MealSearch({
+  filter,
+  tagList,
+  view,
+  onFilterChange,
+  onViewChange,
+}: {
+  filter: MealFilter;
+  tagList: MealTag[];
+  view: "list" | "grid";
+  onFilterChange: (next: MealFilter) => void;
+  onViewChange: (next: "list" | "grid") => void;
+}) {
+  // 入力中の値。確定した q が外から変わったら（URL の遷移・記録後の解除）欄も合わせる
+  const [draft, setDraft] = useState(filter.q);
+  const [seenQ, setSeenQ] = useState(filter.q);
+  if (seenQ !== filter.q) {
+    setSeenQ(filter.q);
+    setDraft(filter.q);
+  }
+
+  return (
+    <search className="stack stack--tight">
+      <form
+        className="search-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onFilterChange({ ...filter, q: draft.trim() });
+        }}
+      >
+        <label htmlFor="mealSearch" className="visually-hidden">
+          料理名でさがす
+        </label>
+        <input
+          id="mealSearch"
+          name="q"
+          type="search"
+          placeholder="料理名でさがす"
+          maxLength={100}
+          enterKeyHint="search"
+          value={draft}
+          onChange={(e) => {
+            const value = e.currentTarget.value;
+            setDraft(value);
+            if (value.trim() === "" && filter.q !== "") onFilterChange({ ...filter, q: "" });
+          }}
+        />
+        <button type="submit" className="btn">
+          さがす
+        </button>
+      </form>
+      <div className="filter-bar">
+        <button
+          type="button"
+          className="chip"
+          aria-pressed={filter.mataTabetai}
+          onClick={() => onFilterChange({ ...filter, mataTabetai: !filter.mataTabetai })}
+        >
+          <span aria-hidden="true">♥</span> またたべたい
+        </button>
+        <button
+          type="button"
+          className="chip"
+          aria-pressed={view === "list"}
+          onClick={() => onViewChange(view === "list" ? "grid" : "list")}
+        >
+          くわしく
+        </button>
+        <TagFilter
+          tagList={tagList}
+          selected={filter.tags}
+          onToggle={(name) => onFilterChange(toggleFilterTag(filter, name))}
+        />
+        {!isEmptyMealFilter(filter) && (
+          <button
+            type="button"
+            className="btn btn--ghost btn--small filter-bar__reset"
+            onClick={() => onFilterChange(EMPTY_MEAL_FILTER)}
+          >
+            絞り込みを解除
+          </button>
+        )}
+      </div>
+    </search>
   );
 }
 
@@ -407,67 +547,5 @@ function SuggestionPicker({ spaceId, onPick }: { spaceId: string; onPick: (s: Me
         </ul>
       )}
     </div>
-  );
-}
-
-function SpacesSection({ spaces }: { spaces: SpaceSummary[] }) {
-  if (spaces.length === 0) return null;
-  return (
-    <div className="card stack">
-      <h2>スペース</h2>
-      <ul className="list" role="list">
-        {spaces.map((s) => (
-          <li key={s.id} className="list-item">
-            <div className="stack stack--tight">
-              <strong>{s.name}</strong>
-              <span className="muted">
-                <span className="badge">{s.role === "owner" ? "オーナー" : "メンバー"}</span> {s.memberCount} 人
-              </span>
-            </div>
-            <Link href={`/spaces/${s.id}/settings`} className="btn btn--ghost">
-              設定
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function CreateSpaceForm() {
-  const { refresh } = useAuth();
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const name = String(new FormData(e.currentTarget).get("name") ?? "");
-    setBusy(true);
-    setError(null);
-    const r = await createSpace(name);
-    if (r.isErr()) {
-      setError(describeFailure(r.error));
-      setBusy(false);
-      return;
-    }
-    await refresh();
-    setBusy(false);
-  };
-  return (
-    <form className="card stack" onSubmit={(e) => void onSubmit(e)}>
-      <h2>自分のスペースを作る</h2>
-      <p className="muted">作れるのは 1 つだけです。家族を招待して一緒に記録できます。</p>
-      <div className="field">
-        <label htmlFor="spaceName">スペースの名前</label>
-        <input id="spaceName" name="name" required maxLength={40} placeholder="例: わが家の食卓" />
-      </div>
-      <button type="submit" className="btn btn--primary" disabled={busy}>
-        作る
-      </button>
-      {error && (
-        <p role="alert" className="alert">
-          {error}
-        </p>
-      )}
-    </form>
   );
 }

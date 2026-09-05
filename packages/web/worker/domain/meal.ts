@@ -135,7 +135,16 @@ export const UpdateMataTabetaiInput = z.object({ mataTabetai: z.boolean() });
 // サジェストと一覧のタグ検索で同じ語彙・同じ意味（requirements 6 / 8）
 export const TagFilterQuery = z.array(TagName).max(10).transform(uniqueTagNames);
 
-// 一覧のフィルタ（requirements 6 / 9）。またたべたいは「絞るか絞らないか」の一択なので
+// 料理名の部分一致（requirements「主要クエリ」の LIKE、ADR-009 §1）。空・空白だけは「絞らない」
+const MealNameQuery = z
+  .string()
+  .trim()
+  .max(100)
+  .regex(/^[^\p{Cc}]*$/u, "制御文字は使えません")
+  .optional()
+  .transform((v) => (v ? v : undefined));
+
+// 一覧のフィルタ（requirements 6 / 9 / 15）。またたべたいは「絞るか絞らないか」の一択なので
 // 値は "1" だけを受け、他の値は入力ミスとして弾く
 export const MealListQuery = z.object({
   tags: TagFilterQuery,
@@ -143,8 +152,14 @@ export const MealListQuery = z.object({
     .literal("1")
     .optional()
     .transform((v) => v !== undefined),
+  q: MealNameQuery,
 });
 export type MealListQuery = z.output<typeof MealListQuery>;
+
+// `LIKE '%…%' ESCAPE '\'` の右辺。利用者の入力に混ざった % _ \ をワイルドカードにしない
+export function likePattern(needle: string): string {
+  return `%${needle.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
 
 // 料理名の期間集計（requirements 7）。from / to は任意で、両端を含む（BETWEEN と同じ読み）
 export const MealStatsQuery = z

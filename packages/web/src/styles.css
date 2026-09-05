@@ -183,10 +183,12 @@
   .fieldgroup > .hint {
     margin-block: var(--space-1) var(--space-2);
   }
+  /* inline-flex の中では ♥ と文字の間の空白が落ちる（空白だけの flex item は無い）ので gap で空ける */
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    column-gap: 0.25em;
     min-block-size: var(--tap);
     padding: var(--space-2) var(--space-4);
     border: 1px solid var(--color-border);
@@ -521,7 +523,6 @@
     font-size: calc(0.8125rem + var(--weight, 0) * 0.5rem);
   }
   .tag-cloud__count {
-    margin-inline-start: var(--space-1);
     color: var(--color-muted);
     font-size: 0.75rem;
   }
@@ -537,20 +538,62 @@
     padding: 0;
     border: 0;
   }
+  /* 札はボタンにもリンク（タグクラウド → ホーム）にもなる。リンクの下線と色は札の見た目に譲る。
+     gap は .btn と同じ理由（♥ と文字、名前と回数の間） */
   .chip {
     display: inline-flex;
     align-items: center;
+    column-gap: 0.25em;
     min-block-size: 2.5rem;
     padding-inline: var(--space-3);
     border: 1px solid var(--color-border);
     border-radius: 999px;
     background: var(--color-surface);
+    color: inherit;
     font-size: 0.875rem;
+    text-decoration: none;
     cursor: pointer;
   }
   .chip[aria-pressed="true"] {
     border-color: var(--color-accent);
     color: var(--color-accent);
+  }
+  /* ホームの h1（スペース名）。「＋ 記録する」と 1 行に収まる大きさに抑える — 主役は壁で、題は控えめでよい */
+  .feed-title {
+    font-size: clamp(1.25rem, 1rem + 1.25vw, 1.5rem);
+  }
+  /* ホームの検索（requirements 15、ADR-009）。壁の上の 1 行: 入力が伸び、「さがす」は入力と同じ高さ */
+  .search-form {
+    display: flex;
+    gap: var(--space-2);
+  }
+  .search-form input {
+    flex: 1;
+    min-inline-size: 0;
+    /* Safari の searchfield の見た目（角丸・内側の余白）を外し、他の入力と同じ枠にする */
+    appearance: none;
+  }
+  /* ♥・くわしく・タグ絞り込みの 1 行。タグの details は閉じていれば残り幅を取り（狭ければ次の行へ）、
+     開いたら末尾に回って 1 行を丸ごと使う — 残り幅の中で札が縦に積まれる細い列にしない */
+  .filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+  .filter-bar .tag-filter {
+    flex: 1 1 12rem;
+  }
+  .filter-bar .tag-filter[open] {
+    order: 1;
+    flex-basis: 100%;
+  }
+  /* summary の 1 行目を札（2.5rem）の高さにそろえる */
+  .filter-bar .tag-filter > summary {
+    padding-block: 0.55rem;
+  }
+  .filter-bar__reset {
+    margin-inline-start: auto;
   }
   /* 記録フォームの dialog（requirements 14）。スマホでは画面いっぱいのシート（背後は見えないので
      タップで閉じる背景も無い）、広い画面では中央のカード。どちらも dialog 自身がスクロールし、

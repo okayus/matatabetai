@@ -10,7 +10,7 @@ test("a member of space A gets 404 for space B (API and UI)", async ({ page, bas
   await page.getByLabel("表示名").fill("e2e-stranger");
   await page.getByLabel("登録トークン").fill(E2E_INITIAL_REGISTRATION_TOKEN);
   await page.getByRole("button", { name: "パスキーを作って登録" }).click();
-  await expect(page.getByRole("heading", { name: /こんにちは、e2e-stranger さん/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "e2e-strangerの食卓" })).toBeVisible();
 
   const origin = { Origin: baseURL ?? "" };
   const read = await page.request.get(`/api/spaces/${OTHER_SPACE_ID}`);
@@ -77,6 +77,10 @@ test("a member of space A gets 404 for space B (API and UI)", async ({ page, bas
     await (
       await page.request.get(`/api/spaces/${mine}/meals?tags=${encodeURIComponent(OTHER_TAG_NAME)}`)
     ).json(),
+  ).toEqual([]);
+  // 料理名の部分一致（ADR-009 §1）も同じ一覧の絞り込み。「よその肉じゃが」は「よその」に掛からない
+  expect(
+    await (await page.request.get(`/api/spaces/${mine}/meals?q=${encodeURIComponent("よその")}`)).json(),
   ).toEqual([]);
 
   // 写真ルートも同じ（photo の認可連鎖は meal の space 一致で切れる。R2 には触れない）

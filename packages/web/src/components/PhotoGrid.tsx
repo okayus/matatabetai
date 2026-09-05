@@ -17,8 +17,13 @@ export function PhotoGrid({
   onOpenCell: (meal: Meal) => void;
 }) {
   const items = photoGridItems(meals);
+  // 記録はあるが写真が無い（絞り込みの結果に写真つきが無いときも同じ）。写真の無い記録は くわしく にいる
   if (items.length === 0) {
-    return <p className="muted">写真のついた記録がまだありません。写真をつけて記録すると、ここに並びます。</p>;
+    return (
+      <p className="muted">
+        写真のついた記録はありません。写真をつけて記録するとここに並びます（写真のない記録は「くわしく」で見られます）。
+      </p>
+    );
   }
   return (
     <ul className="photo-grid" role="list">

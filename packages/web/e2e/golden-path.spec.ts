@@ -7,9 +7,10 @@ import { enableVirtualAuthenticator } from "./helpers/webauthn";
 // リロードでセッションが残る → 記録フォーム（dialog）を開いて投稿作成（meals/tags/meal_tags +
 // 写真 2 枚: 縮小 → R2 → proxy 配信・304）→ 写真 1 枚削除 → またたべたいトグル →
 // リロードで投稿・トグル・写真が残る → サジェスト（料理名ごとの直近 1 件・タグ AND 絞り込み・
-// リンク 2 種と作り方メモの引き継ぎ）→ 削除（R2 も消える）→ 招待リンク発行 → 別ブラウザが招待から
-// 登録 → メンバーに並ぶ → ログアウト → パスキーでログインし直す。ドメインの意味はユニットに譲る。
-test("register → reload → meal record with photos → suggestion → invite → second member → logout → login", async ({ page, browser, baseURL }) => {
+// リンク 2 種と作り方メモの引き継ぎ）→ ホームの検索（♥ / タグ AND / 料理名の部分一致、URL に残る）→
+// ふりかえりの集計と、札・行からホームへの遷移 → 編集 → 削除（R2 も消える）→ 招待リンク発行 →
+// 別ブラウザが招待から登録 → メンバーに並ぶ → ログアウト → パスキーでログインし直す。ドメインの意味はユニットに譲る。
+test("register → reload → meal record with photos → suggestion → search → lookback → invite → second member → logout → login", async ({ page, browser, baseURL }) => {
   await enableVirtualAuthenticator(page);
 
   await page.goto("/register");
@@ -18,21 +19,23 @@ test("register → reload → meal record with photos → suggestion → invite 
   await page.getByLabel("この端末の名前（任意）").fill("virtual");
   await page.getByRole("button", { name: "パスキーを作って登録" }).click();
 
-  await expect(page.getByRole("heading", { name: /こんにちは、e2e-owner さん/ })).toBeVisible();
-  await expect(page.getByText("e2e-ownerの食卓")).toBeVisible();
+  // ホームの h1 は初回登録で作られたスペースの名前（ADR-009 §5）
+  await expect(page.getByRole("heading", { name: "e2e-ownerの食卓" })).toBeVisible();
 
-  // 永続化の事実: リロード後もログイン状態と表示名が残る
+  // 永続化の事実: リロード後もログイン状態とスペースが残る
   await page.reload();
-  await expect(page.getByRole("heading", { name: /こんにちは、e2e-owner さん/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "e2e-ownerの食卓" })).toBeVisible();
 
   // 記録フォームは <dialog>（requirements 14）: ボタンで開き、送れたら閉じる。
   // サジェストの札と一覧は同じ料理名を出すので、dialog / feed で分ける
   const composer = page.getByRole("dialog", { name: "たべたものを記録" });
   const openComposer = () => page.getByRole("button", { name: "たべたものを記録する" }).click();
-  const feed = page.getByRole("region", { name: "みんなの記録" });
+  const feed = page.getByRole("region", { name: "e2e-ownerの食卓" });
   // タイムラインの既定は写真だけ（requirements 15）。料理名・タグ・ボタンは くわしく にある。
   // 読み込み直すたび既定に戻るので、reload / ホームに戻るのあとで押し直す
   const showDetails = () => feed.getByRole("button", { name: "くわしく" }).click();
+  // 記録に付いたタグの札。検索のタグ絞り込みにも同じ名前の chip があるので、行（listitem）の中で探す
+  const tagBadge = (name: string) => feed.getByRole("listitem").getByText(name, { exact: true });
 
   // 投稿作成（meals / tags / meal_tags が繋がっている）+ 写真 2 枚。
   // setInputFiles の PNG をクライアントが canvas で JPEG に縮小してから multipart で送る
@@ -53,8 +56,8 @@ test("register → reload → meal record with photos → suggestion → invite 
   await expect(composer).toBeHidden();
   await showDetails();
   await expect(feed.getByText("肉じゃが", { exact: true })).toBeVisible();
-  await expect(feed.getByText("じゃがいも", { exact: true })).toBeVisible();
-  await expect(feed.getByText("牛肉", { exact: true })).toBeVisible();
+  await expect(tagBadge("じゃがいも")).toBeVisible();
+  await expect(tagBadge("牛肉")).toBeVisible();
 
   // サムネ 2 枚が実際に描画された（proxy route がブラウザに解釈できるバイト列を返した事実）
   const thumbs = feed.locator("img[src*='/photos/']");
@@ -87,18 +90,16 @@ test("register → reload → meal record with photos → suggestion → invite 
   await expect.poll(async () => (await page.request.get(photoPaths[0]!)).status()).toBe(404);
   expect((await page.request.get(photoPaths[1]!)).status()).toBe(200);
 
-  // またたべたいトグル → リロードで投稿もトグルも写真も残る（永続化はユニットでは検知不能）
-  const mataButton = feed.getByRole("button", { name: /またたべたい/ });
+  // またたべたいトグル → リロードで投稿もトグルも写真も残る（永続化はユニットでは検知不能）。
+  // 検索の ♥ 札も「またたべたい」なので、行のボタンは読み上げ用の料理名で選ぶ
+  const mataButton = feed.getByRole("button", { name: /またたべたい\s*（肉じゃが）/ });
   await expect(mataButton).toHaveAttribute("aria-pressed", "false");
   await mataButton.click();
   await expect(mataButton).toHaveAttribute("aria-pressed", "true");
   await page.reload();
   await showDetails();
   await expect(feed.getByText("肉じゃが", { exact: true })).toBeVisible();
-  await expect(feed.getByRole("button", { name: /またたべたい/ })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await expect(mataButton).toHaveAttribute("aria-pressed", "true");
   await expect(feed.locator("img[src*='/photos/']")).toHaveCount(1);
   // リンク 2 種と作り方メモも残る（recipe_url / shop_url は additive migration で足した列 — ADR-007 §2）
   await expect(feed.getByRole("link", { name: /^レシピ:/ })).toHaveAttribute(
@@ -152,25 +153,50 @@ test("register → reload → meal record with photos → suggestion → invite 
   await page.keyboard.press("Escape");
   await expect(composer).toBeHidden();
 
-  // ふりかえり: またたべたい一覧（既定）→ ぜんぶの記録 + タグ AND → 料理名の期間集計、の配線。
-  // ♥ は肉じゃがだけに付いている状態。意味の網羅はユニットに譲る
-  await page.getByRole("link", { name: "ふりかえり" }).click();
-  const records = page.getByRole("region", { name: "記録をさがす" });
-  await expect(records.getByText("肉じゃが", { exact: true })).toBeVisible();
-  await expect(records.getByText("カレー", { exact: true })).toHaveCount(0);
-  await records.getByRole("button", { name: "ぜんぶの記録" }).click();
-  await expect(records.getByText("カレー", { exact: true })).toBeVisible();
-  await records.locator("summary", { hasText: "タグで絞り込む" }).click();
-  await records.getByRole("button", { name: "にんじん" }).click();
-  await expect(records.getByText("肉じゃが", { exact: true })).toHaveCount(0);
-  await expect(records.getByText("カレー", { exact: true })).toBeVisible();
+  // ホームの検索（requirements 15 / ADR-009）: ♥ → タグ AND → 料理名の部分一致 → 解除、の配線。
+  // 絞り込みは URL のクエリに出て、リロードしても残る。♥ は肉じゃがだけに付いている状態。
+  // 見せ方（くわしく）は絞り込みを変えても保たれる（同じ画面のまま読み直すだけ）
+  const mataChip = feed.getByRole("button", { name: "またたべたい", exact: true });
+  const searchBox = feed.getByRole("searchbox", { name: "料理名でさがす" });
+  await mataChip.click();
+  await expect(page).toHaveURL(/\?mataTabetai=1$/);
+  await expect(feed.getByText("肉じゃが", { exact: true })).toBeVisible();
+  await expect(feed.getByText("カレー", { exact: true })).toHaveCount(0);
+  await mataChip.click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(feed.getByText("カレー", { exact: true })).toBeVisible();
+  await feed.locator("summary", { hasText: "タグで絞り込む" }).click();
+  await feed.getByRole("button", { name: "にんじん" }).click();
+  await expect(feed.getByText("肉じゃが", { exact: true })).toHaveCount(0);
+  await expect(feed.getByText("カレー", { exact: true })).toBeVisible();
+  // 料理名は「さがす」（Enter）で確定。タグ AND と合成される（にんじん × じゃが = 0 件）
+  await searchBox.fill("じゃが");
+  await searchBox.press("Enter");
+  await expect(page).toHaveURL(/q=%E3%81%98%E3%82%83%E3%81%8C/);
+  await expect(feed.getByText("この絞り込みに合う記録はまだありません")).toBeVisible();
+  await feed.getByRole("button", { name: "にんじん" }).click();
+  await expect(feed.getByText("肉じゃが", { exact: true })).toBeVisible();
+  await expect(feed.getByText("カレー", { exact: true })).toHaveCount(0);
+  // リロードしても絞り込みは残る（URL が持つ。引っ張り更新で検索が消えない）
+  await page.reload();
+  await expect(searchBox).toHaveValue("じゃが");
+  await showDetails();
+  await expect(feed.getByText("肉じゃが", { exact: true })).toBeVisible();
+  await expect(feed.getByText("カレー", { exact: true })).toHaveCount(0);
+  // 欄を空にした瞬間に解除される（「さがす」を待たない）
+  await searchBox.fill("");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(feed.getByText("カレー", { exact: true })).toBeVisible();
+  await expect(feed.getByRole("button", { name: "絞り込みを解除" })).toHaveCount(0);
 
-  // 集計: 既定の今月に 2 品が 1 回ずつ数えられ、同じ期間のタグがクラウドに出る。
+  // ふりかえりは集計だけ（ADR-009 §3）: 既定の今月に 2 品が 1 回ずつ数えられ、同じ期間のタグがクラウドに出る。
   // ← で先月に移ると 0 件、→ で戻る（プリセットが from / to を組んで両方の集計に渡している配線）
+  await page.getByRole("link", { name: "ふりかえり" }).click();
+  await expect(page.getByRole("region", { name: "記録をさがす" })).toHaveCount(0);
   const statsSection = page.getByRole("region", { name: "食べたもののまとめ" });
   await expect(statsSection.getByText("肉じゃが", { exact: true })).toBeVisible();
   await expect(statsSection.getByText("1 回", { exact: true })).toHaveCount(2);
-  await expect(statsSection.getByRole("button", { name: /じゃがいも/ })).toBeVisible();
+  await expect(statsSection.getByRole("link", { name: /じゃがいも/ })).toBeVisible();
   await statsSection.getByRole("button", { name: "前の月" }).click();
   await expect(statsSection.getByText("この期間の記録はまだありません")).toBeVisible();
   await statsSection.getByRole("button", { name: "次の月" }).click();
@@ -181,15 +207,26 @@ test("register → reload → meal record with photos → suggestion → invite 
   await expect(statsSection.getByText("この期間の記録はまだありません")).toBeVisible();
   await statsSection.getByRole("button", { name: "今月" }).click();
 
-  // クラウドのタグをタップすると、上の「記録をさがす」がその食材だけに絞り直る。
-  // またたべたい の枠は外れるので、♡ の付いていないカレーにも届く
-  const scope = records.getByRole("group", { name: "どの記録を見るか" });
-  await scope.getByRole("button", { name: "またたべたい" }).click();
-  await expect(records.getByText("この絞り込みに合う記録はまだありません")).toBeVisible();
-  await statsSection.getByRole("button", { name: /にんじん/ }).click();
-  await expect(records.getByText("カレー", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "ホーム" }).click();
+  // クラウドの札はホームへの入口: そのタグ 1 つで絞られたホームが開く（♥ の枠は無いので、
+  // ♡ の付いていないカレーが出る）。ページ間の遷移なので「戻る」でふりかえりに戻れる
+  await statsSection.getByRole("link", { name: /にんじん/ }).click();
+  await expect(page).toHaveURL(/\/\?tags=%E3%81%AB%E3%82%93%E3%81%98%E3%82%93$/);
   await showDetails();
+  await expect(feed.getByText("カレー", { exact: true })).toBeVisible();
+  await expect(feed.getByText("肉じゃが", { exact: true })).toHaveCount(0);
+  await page.goBack();
+  await expect(statsSection.getByText("1 回", { exact: true })).toHaveCount(2);
+  // ランキングの料理名もホームへ（q の部分一致）
+  await statsSection.getByRole("link", { name: "肉じゃが" }).click();
+  await expect(page).toHaveURL(/\/\?q=%E8%82%89%E3%81%98%E3%82%83%E3%81%8C$/);
+  await expect(searchBox).toHaveValue("肉じゃが");
+  await showDetails();
+  await expect(feed.getByText("肉じゃが", { exact: true })).toBeVisible();
+  await expect(feed.getByText("カレー", { exact: true })).toHaveCount(0);
+  // 「ホーム」は素の壁（絞り込みなし）。同じ画面のままなので くわしく は保たれている
+  await page.getByRole("link", { name: "ホーム" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(searchBox).toHaveValue("");
   await expect(feed.getByText("カレー", { exact: true })).toBeVisible();
 
   // 編集（requirements 11 / ADR-008）: 行がその場でフォームになり、内容の全置き換えで保存する。
@@ -214,8 +251,8 @@ test("register → reload → meal record with photos → suggestion → invite 
   await showDetails();
   await expect(feed.getByText("肉じゃがリメイク", { exact: true })).toBeVisible();
   await expect(feed.getByText("翌日のほうがおいしい")).toBeVisible();
-  await expect(feed.getByText("玉ねぎ", { exact: true })).toBeVisible();
-  await expect(feed.getByText("牛肉", { exact: true })).toHaveCount(0);
+  await expect(tagBadge("玉ねぎ")).toBeVisible();
+  await expect(tagBadge("牛肉")).toHaveCount(0);
   await expect(feed.locator("img[src*='/photos/']")).toHaveCount(2);
   await expect(
     feed.getByRole("button", { name: /またたべたい\s*（肉じゃがリメイク）/ }),
@@ -237,7 +274,9 @@ test("register → reload → meal record with photos → suggestion → invite 
   await expect(page.getByText("まだ記録がありません", { exact: false })).toBeVisible();
   await expect.poll(async () => (await page.request.get(photoPaths[1]!)).status()).toBe(404);
 
-  // 招待リンクを発行
+  // 招待リンクを発行（スペース一覧と設定への入口はアカウントにある — ADR-009 §5）
+  await page.getByRole("link", { name: "アカウント" }).click();
+  await expect(page.getByText("オーナー", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "設定" }).click();
   await expect(page.getByRole("heading", { name: "e2e-ownerの食卓" })).toBeVisible();
   await page.getByRole("button", { name: "招待リンクを作る" }).click();
@@ -254,7 +293,9 @@ test("register → reload → meal record with photos → suggestion → invite 
   expect(new URL(page2.url()).hash).toBe("");
   await page2.getByLabel("表示名").fill("e2e-member");
   await page2.getByRole("button", { name: "パスキーを作って参加" }).click();
-  await expect(page2.getByRole("heading", { name: /こんにちは、e2e-member さん/ })).toBeVisible();
+  // 参加したスペースの壁が開く。役割はアカウントのスペース一覧で見える
+  await expect(page2.getByRole("heading", { name: "e2e-ownerの食卓" })).toBeVisible();
+  await page2.getByRole("link", { name: "アカウント" }).click();
   await expect(page2.getByText("e2e-ownerの食卓")).toBeVisible();
   await expect(page2.getByText("メンバー", { exact: true })).toBeVisible();
   await ctx2.close();
@@ -272,5 +313,5 @@ test("register → reload → meal record with photos → suggestion → invite 
   expect(me.status()).toBe(401);
 
   await page.getByRole("button", { name: "パスキーでログイン" }).click();
-  await expect(page.getByRole("heading", { name: /こんにちは、e2e-owner さん/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "e2e-ownerの食卓" })).toBeVisible();
 });
