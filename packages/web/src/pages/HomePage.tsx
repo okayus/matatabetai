@@ -45,6 +45,8 @@ export function HomePage({ me }: { me: Me }) {
 
 function MealsSection({ space }: { space: SpaceSummary }) {
   const [meals, setMeals] = useState<Meal[] | null>(null);
+  // タイムラインの見せ方（requirements 13）。既定はくわしく（カード）で、写真だけの壁に切り替えられる
+  const [view, setView] = useState<"list" | "grid">("list");
   const [error, setError] = useState<string | null>(null);
   // 記録が変わればサジェストも変わる（消した料理の札や、消えた写真を出したままにしない）
   const [mealsVersion, setMealsVersion] = useState(0);
@@ -80,13 +82,35 @@ function MealsSection({ space }: { space: SpaceSummary }) {
         ) : meals.length === 0 ? (
           <p className="muted">まだ記録がありません。最初のたべたものを記録してみましょう。</p>
         ) : (
-          <MealList
-            spaceId={space.id}
-            meals={meals}
-            onMealsChange={(update) => setMeals((prev) => update(prev ?? []))}
-            onRecordsChanged={bumpVersion}
-            onError={setError}
-          />
+          <>
+            <fieldset className="chips">
+              <legend className="visually-hidden">記録の見せ方</legend>
+              <button
+                type="button"
+                className="chip"
+                aria-pressed={view === "list"}
+                onClick={() => setView("list")}
+              >
+                くわしく
+              </button>
+              <button
+                type="button"
+                className="chip"
+                aria-pressed={view === "grid"}
+                onClick={() => setView("grid")}
+              >
+                写真だけ
+              </button>
+            </fieldset>
+            <MealList
+              spaceId={space.id}
+              meals={meals}
+              view={view}
+              onMealsChange={(update) => setMeals((prev) => update(prev ?? []))}
+              onRecordsChanged={bumpVersion}
+              onError={setError}
+            />
+          </>
         )}
       </section>
     </>
