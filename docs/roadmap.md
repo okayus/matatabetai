@@ -29,7 +29,7 @@
 - [x] 週 / 月の集計 UI、タグクラウド — [ADR-006](adr/006-lookback-stats-tag-search.md) 改訂 §5-8
 - [x] 投稿の編集（[requirements](requirements.md) 11）— [ADR-008](adr/008-meal-edit.md)
 - [x] 写真のカルーセル（[requirements](requirements.md) 12）— 2026-09-03 追加
-- [ ] 写真グリッドのタイムライン（[requirements](requirements.md) 13）— 2026-09-03 追加
+- [x] 写真グリッドのタイムライン（[requirements](requirements.md) 13）— 2026-09-03 追加
 
 ## Phase 4 — 公開前の堅牢化
 
