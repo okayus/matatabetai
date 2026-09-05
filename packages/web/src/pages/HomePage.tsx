@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   createMeal,
   createSpace,
@@ -45,12 +45,12 @@ export function HomePage({ me }: { me: Me }) {
 
 function MealsSection({ space }: { space: SpaceSummary }) {
   const [meals, setMeals] = useState<Meal[] | null>(null);
-  // タイムラインの見せ方（requirements 13）。既定はくわしく（カード）で、写真だけの壁に切り替えられる
-  const [view, setView] = useState<"list" | "grid">("list");
+  // タイムラインの見せ方（requirements 13）。既定は写真だけの壁（requirements 15）で、
+  // 料理名・タグ・メモまで読みたければ くわしく に切り替える
+  const [view, setView] = useState<"list" | "grid">("grid");
+  // 記録フォームは <dialog>（requirements 14）。押して開くまでページに出ない
+  const [composing, setComposing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // 記録が変わればサジェストも変わる（消した料理の札や、消えた写真を出したままにしない）
-  const [mealsVersion, setMealsVersion] = useState(0);
-  const bumpVersion = () => setMealsVersion((n) => n + 1);
 
   const load = useCallback(async () => {
     const r = await listMeals(space.id);
@@ -62,16 +62,23 @@ function MealsSection({ space }: { space: SpaceSummary }) {
   }, [load]);
 
   // eaten_on DESC, created_at DESC のサーバー順を、手元の挿入でも保つ
-  const insert = (m: Meal) => {
-    setMeals((prev) => sortByRecency([m, ...(prev ?? [])]));
-    bumpVersion();
-  };
+  const insert = (m: Meal) => setMeals((prev) => sortByRecency([m, ...(prev ?? [])]));
 
   return (
     <>
-      <MealForm spaceId={space.id} suggestionKey={mealsVersion} onCreated={insert} />
       <section className="card stack" aria-labelledby="feedHeading">
-        <h2 id="feedHeading">みんなの記録</h2>
+        <div className="row row--between">
+          <h2 id="feedHeading">みんなの記録</h2>
+          {/* 見出しの横に収まる短い表示（スマホ幅で折り返すと写真が 1 行ぶん下がる）。名前は読み上げ用に補う */}
+          <button
+            type="button"
+            className="btn btn--primary"
+            aria-label="たべたものを記録する"
+            onClick={() => setComposing(true)}
+          >
+            ＋ 記録する
+          </button>
+        </div>
         {error && (
           <p role="alert" className="alert">
             {error}
@@ -88,18 +95,18 @@ function MealsSection({ space }: { space: SpaceSummary }) {
               <button
                 type="button"
                 className="chip"
-                aria-pressed={view === "list"}
-                onClick={() => setView("list")}
-              >
-                くわしく
-              </button>
-              <button
-                type="button"
-                className="chip"
                 aria-pressed={view === "grid"}
                 onClick={() => setView("grid")}
               >
                 写真だけ
+              </button>
+              <button
+                type="button"
+                className="chip"
+                aria-pressed={view === "list"}
+                onClick={() => setView("list")}
+              >
+                くわしく
               </button>
             </fieldset>
             <MealList
@@ -107,12 +114,17 @@ function MealsSection({ space }: { space: SpaceSummary }) {
               meals={meals}
               view={view}
               onMealsChange={(update) => setMeals((prev) => update(prev ?? []))}
-              onRecordsChanged={bumpVersion}
               onError={setError}
             />
           </>
         )}
       </section>
+      <MealFormDialog
+        spaceId={space.id}
+        open={composing}
+        onClose={() => setComposing(false)}
+        onCreated={insert}
+      />
     </>
   );
 }
@@ -120,15 +132,31 @@ function MealsSection({ space }: { space: SpaceSummary }) {
 // 選択済みでまだ送っていない写真。preview はサムネ blob の object URL（外したら revoke）
 type PendingPhoto = { key: string; prepared: PreparedPhoto; previewUrl: string };
 
-function MealForm({
+// 記録フォーム（requirements 14）。ページ上部に常駐せず、「たべたものを記録する」で <dialog> として
+// 開く（showModal — Esc・Android の戻る・広い画面では背景のタップで閉じる。拡大表示と同じ流儀）。
+// 閉じても入力は捨てない: フォームは閉じた dialog の中にそのまま残るので、途中で閉じても
+// やり直しにならない（送れたときだけ空にする）。
+// サジェストは開いている間だけ読む — ホームを眺めるだけの読み込みにリクエストを足さないし、
+// 開くたびに読み直すので、記録の増減に追従させる再読込の配線が要らない（modal の間、記録は動かない）
+function MealFormDialog({
   spaceId,
-  suggestionKey,
+  open,
+  onClose,
   onCreated,
 }: {
   spaceId: string;
-  suggestionKey: number;
+  open: boolean;
+  onClose: () => void;
   onCreated: (m: Meal) => void;
 }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
+  }, [open]);
+
   const [form, setForm] = useState<MealFormState>(() => emptyMealForm(todayLocalDate()));
   const [pending, setPending] = useState<PendingPhoto[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -199,96 +227,112 @@ function MealForm({
     onCreated({ ...r.value, photos });
     for (const p of pending) URL.revokeObjectURL(p.previewUrl);
     setPending([]);
-    if (photoFailure) {
-      setError(`記録は保存しましたが、写真を送れませんでした: ${photoFailure}`);
-    }
     setForm(emptyMealForm(todayLocalDate()));
     setCarriedOver(null);
+    // 送れたら閉じて、一覧に並んだ記録を見せる。写真が送れなかったときだけ開いたまま知らせる
+    // （閉じてしまうと知らせを読む場が無い）
+    if (photoFailure) setError(`記録は保存しましたが、写真を送れませんでした: ${photoFailure}`);
+    else onClose();
   };
 
   return (
-    <form className="card stack" aria-labelledby="mealFormHeading" onSubmit={(e) => void onSubmit(e)}>
-      <h2 id="mealFormHeading">たべたものを記録</h2>
-      <MealFields
-        idPrefix="newMeal"
-        form={form}
-        onChange={set}
-        afterName={
-          <>
-            <SuggestionPicker
-              spaceId={spaceId}
-              reloadKey={suggestionKey}
-              onPick={(s) => {
-                setForm((f) => applySuggestion(f, s));
-                setCarriedOver(s.name);
-              }}
-            />
-            {/* 空でも要素を残す（後から現れる live region は読み上げられないことがある） */}
-            <p className="hint status-line" role="status">
-              {carriedOver && `「${carriedOver}」の前回の内容を引き継ぎました。日付とひとことメモは今回の分をどうぞ。`}
+    <dialog
+      ref={ref}
+      className="sheet"
+      aria-labelledby="mealFormHeading"
+      closedby="any"
+      onClose={onClose}
+      onClick={(e) => {
+        // closedby="any" の無い Safari のための背景タップ。中身（form）が dialog を満たしているので、
+        // target が dialog そのものになるのは背景だけ
+        if (e.target === ref.current) onClose();
+      }}
+    >
+      <form onSubmit={(e) => void onSubmit(e)}>
+        <div className="sheet__head">
+          <h2 id="mealFormHeading">たべたものを記録</h2>
+          <button type="button" className="btn btn--small" onClick={onClose}>
+            閉じる
+          </button>
+        </div>
+        <div className="sheet__body stack">
+          <MealFields
+            idPrefix="newMeal"
+            form={form}
+            onChange={set}
+            afterName={
+              <>
+                {open && (
+                  <SuggestionPicker
+                    spaceId={spaceId}
+                    onPick={(s) => {
+                      setForm((f) => applySuggestion(f, s));
+                      setCarriedOver(s.name);
+                    }}
+                  />
+                )}
+                {/* 空でも要素を残す（後から現れる live region は読み上げられないことがある） */}
+                <p className="hint status-line" role="status">
+                  {carriedOver &&
+                    `「${carriedOver}」の前回の内容を引き継ぎました。日付とひとことメモは今回の分をどうぞ。`}
+                </p>
+              </>
+            }
+            photos={
+              <>
+                <div className="field">
+                  <label htmlFor="newMealPhotos">写真</label>
+                  <span id="newMealPhotosHint" className="hint">
+                    複数選べます。この端末で縮小してから送ります（位置情報は残りません）
+                  </span>
+                  <input
+                    id="newMealPhotos"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    aria-describedby="newMealPhotosHint"
+                    disabled={busy}
+                    onChange={(e) => void onPickPhotos(e)}
+                  />
+                </div>
+                {pending.length > 0 && (
+                  <ul className="photo-strip" role="list">
+                    {pending.map((p, i) => (
+                      <li key={p.key} className="photo-pending">
+                        <img src={p.previewUrl} alt={`選択中の写真 ${i + 1}`} />
+                        <button
+                          type="button"
+                          className="btn btn--small"
+                          disabled={busy}
+                          onClick={() => removePending(p.key)}
+                        >
+                          外す<span className="visually-hidden">（選択中の写真 {i + 1}）</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            }
+          />
+          <button type="submit" className="btn btn--primary" disabled={busy}>
+            記録する
+          </button>
+          {error && (
+            <p role="alert" className="alert">
+              {error}
             </p>
-          </>
-        }
-        photos={
-          <>
-            <div className="field">
-              <label htmlFor="newMealPhotos">写真</label>
-              <span id="newMealPhotosHint" className="hint">
-                複数選べます。この端末で縮小してから送ります（位置情報は残りません）
-              </span>
-              <input
-                id="newMealPhotos"
-                type="file"
-                accept="image/*"
-                multiple
-                aria-describedby="newMealPhotosHint"
-                disabled={busy}
-                onChange={(e) => void onPickPhotos(e)}
-              />
-            </div>
-            {pending.length > 0 && (
-              <ul className="photo-strip" role="list">
-                {pending.map((p, i) => (
-                  <li key={p.key} className="photo-pending">
-                    <img src={p.previewUrl} alt={`選択中の写真 ${i + 1}`} />
-                    <button
-                      type="button"
-                      className="btn btn--small"
-                      disabled={busy}
-                      onClick={() => removePending(p.key)}
-                    >
-                      外す<span className="visually-hidden">（選択中の写真 {i + 1}）</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        }
-      />
-      <button type="submit" className="btn btn--primary" disabled={busy}>
-        記録する
-      </button>
-      {error && (
-        <p role="alert" className="alert">
-          {error}
-        </p>
-      )}
-    </form>
+          )}
+        </div>
+      </form>
+    </dialog>
   );
 }
 
 // 投稿フォームのサジェスト（requirements 8）。料理名ごとの直近 1 件を新しい順に並べ、
-// 選ぶと前回のリンク 2 種 / 作り方メモ / タグをフォームに複製する（編集してから新規投稿 — ADR-003 §5）
-function SuggestionPicker({
-  spaceId,
-  reloadKey,
-  onPick,
-}: {
-  spaceId: string;
-  reloadKey: number;
-  onPick: (s: MealSuggestion) => void;
-}) {
+// 選ぶと前回のリンク 2 種 / 作り方メモ / タグをフォームに複製する（編集してから新規投稿 — ADR-003 §5）。
+// dialog が開いている間だけ mount されるので、読むのは開いたとき（と絞り込みを変えたとき）だけ
+function SuggestionPicker({ spaceId, onPick }: { spaceId: string; onPick: (s: MealSuggestion) => void }) {
   const [suggestions, setSuggestions] = useState<MealSuggestion[] | null>(null);
   const [tagList, setTagList] = useState<MealTag[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -302,7 +346,7 @@ function SuggestionPicker({
     return () => {
       live = false;
     };
-  }, [spaceId, reloadKey]);
+  }, [spaceId]);
 
   // 絞り込みを続けて切り替えたときに、古い応答で上書きしない
   useEffect(() => {
@@ -315,7 +359,7 @@ function SuggestionPicker({
     return () => {
       live = false;
     };
-  }, [spaceId, selected, reloadKey]);
+  }, [spaceId, selected]);
 
   const toggleTag = (name: string) =>
     setSelected((prev) => (prev.includes(name) ? prev.filter((t) => t !== name) : [...prev, name]));

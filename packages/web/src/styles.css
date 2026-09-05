@@ -51,6 +51,12 @@
     background: var(--color-bg);
     color: var(--color-text);
     -webkit-text-size-adjust: 100%;
+    scrollbar-gutter: stable; /* modal の開閉でスクロールバーの幅ぶん背後が左右に動かないように */
+  }
+  /* modal（記録フォーム・拡大表示）が開いている間、後ろのページは動かさない — ホイールで背後が流れる、
+     スマホでスクロールが document へ抜けて引っ張り更新が走り下書きが消える、を防ぐ */
+  html:has(dialog:modal) {
+    overflow: hidden;
   }
   h1 {
     font-size: clamp(1.5rem, 1.2rem + 1.5vw, 2rem);
@@ -545,6 +551,54 @@
   .chip[aria-pressed="true"] {
     border-color: var(--color-accent);
     color: var(--color-accent);
+  }
+  /* 記録フォームの dialog（requirements 14）。スマホでは画面いっぱいのシート（背後は見えないので
+     タップで閉じる背景も無い）、広い画面では中央のカード。どちらも dialog 自身がスクロールし、
+     見出しと「閉じる」は上に貼り付く。fixed の箱を inset 0 + auto で満たす: 100vh と違い、
+     iOS のツールバーが出入りしても見えている範囲にぴったり合う */
+  .sheet {
+    inset: 0;
+    inline-size: auto;
+    max-inline-size: none;
+    block-size: auto;
+    max-block-size: none;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: var(--color-surface);
+    color: var(--color-text);
+    overscroll-behavior: contain;
+  }
+  .sheet::backdrop {
+    background: rgb(0 0 0 / 0.5);
+  }
+  /* 中身で dialog を満たす: 余白のタップが「背景のタップ」（= 閉じる）に化けないように */
+  .sheet > form {
+    min-block-size: 100%;
+  }
+  .sheet__head {
+    position: sticky;
+    inset-block-start: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-block-end: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+  .sheet__body {
+    padding: var(--space-3);
+  }
+  @media (min-width: 40rem) {
+    .sheet {
+      inline-size: min(100% - 2rem, 40rem);
+      block-size: fit-content;
+      max-block-size: calc(100% - 2rem);
+      margin: auto;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+    }
   }
   .lightbox {
     max-inline-size: min(96vw, 60rem);

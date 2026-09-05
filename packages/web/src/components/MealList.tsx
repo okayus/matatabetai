@@ -36,7 +36,6 @@ export function MealList({
   meals,
   view = "list",
   onMealsChange,
-  onRecordsChanged,
   onError,
 }: {
   spaceId: string;
@@ -44,8 +43,6 @@ export function MealList({
   view?: "list" | "grid" | undefined;
   // 楽観更新の書き戻し。一覧の配列は親が持つ
   onMealsChange: (update: (prev: Meal[]) => Meal[]) => void;
-  // 記録の増減（削除・写真削除）。ホームはサジェストの再読込に使う
-  onRecordsChanged?: (() => void) | undefined;
   onError: (message: string | null) => void;
 }) {
   // 開いている写真は「どの記録の何枚目か」で持つ。meal そのものを控えると、開いている間に
@@ -65,7 +62,6 @@ export function MealList({
       sortByRecency(prev.map((x) => (x.id === updated.id ? { ...updated, photos: x.photos } : x))),
     );
     setEditingId(null);
-    onRecordsChanged?.();
   };
 
   const toggle = async (m: Meal) => {
@@ -90,7 +86,6 @@ export function MealList({
       return;
     }
     onMealsChange((prev) => prev.filter((x) => x.id !== m.id));
-    onRecordsChanged?.();
   };
   const removePhoto = async (meal: Meal, photo: MealPhoto) => {
     if (!confirm("この写真を削除しますか？")) return;
@@ -107,7 +102,6 @@ export function MealList({
     );
     // 消したら閉じる（残りを見るのは開き直せばよい。消し続けるより一度カードへ戻る方が迷わない）
     setLightbox(null);
-    onRecordsChanged?.();
   };
 
   // 一覧の配列は親が持つので、拡大中の記録も毎回そこから引き直す。
