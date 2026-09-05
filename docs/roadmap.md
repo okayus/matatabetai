@@ -31,14 +31,14 @@
 - [x] 写真のカルーセル（[requirements](requirements.md) 12）— 2026-09-03 追加
 - [x] 写真グリッドのタイムライン（[requirements](requirements.md) 13）— 2026-09-03 追加
 - [x] 投稿フォームのダイアログ化（[requirements](requirements.md) 14）— 2026-09-05 追加
-- [ ] 写真ファーストのトップページ（[requirements](requirements.md) 15: 既定は写真だけ・検索 + 投稿済み写真）— 2026-09-05 追加
+- [x] 写真ファーストのトップページ（[requirements](requirements.md) 15: 既定は写真だけ・検索 + 投稿済み写真）— [ADR-009](adr/009-photo-first-home.md)
 
 ## Phase 4 — 公開前の堅牢化
 
 - [ ] bot scan 対策・認証 route のレート制限 — `cloudflare-workers-bot-scan-defense`
 - [ ] D1 バックアップ — `cloudflare-d1-weekly-backup-via-pr`（public なら git commit 変種は不可 → keyless 変種）
 - [x] 写真のバックアップ方針を ADR に（R2 に PITR なし）
-- [ ] 日本語部分一致の FTS5 化（D1 の trigram tokenizer は要確認）、スペース切替 UI
+- [ ] 日本語部分一致の FTS5 化（LIKE は #58 で稼働。D1 の trigram tokenizer は要確認）、スペース切替 UI
 
 ---
 
