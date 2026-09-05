@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
 import {
   deleteMeal,
   deleteMealPhoto,
@@ -18,19 +25,23 @@ import { preparePhoto } from "../lib/image-prep";
 import { MEAL_TYPE_LABEL, mealFormFrom, toMealContentBody, type MealFormState } from "../lib/meal-form";
 import { sortByRecency } from "../lib/meal-order";
 import { MealFields } from "./MealFields";
+import { PhotoGrid } from "./PhotoGrid";
 
 // みんなの記録とふりかえりで共通の一覧。日付見出しでまとめ、またたべたいトグル・削除・
 // 写真の拡大（<dialog>）までここが持つ。読み込み・並び・空表示は親の責務。
-// またたべたい絞り込み中に ♥ を外しても行は消さない（誤タップを戻せる。次の読み込みで消える）
+// またたべたい絞り込み中に ♥ を外しても行は消さない（誤タップを戻せる。次の読み込みで消える）。
+// view="grid" は同じ配列を写真だけの壁に描き替える（requirements 13。拡大と削除は共有）
 export function MealList({
   spaceId,
   meals,
+  view = "list",
   onMealsChange,
   onRecordsChanged,
   onError,
 }: {
   spaceId: string;
   meals: Meal[];
+  view?: "list" | "grid" | undefined;
   // 楽観更新の書き戻し。一覧の配列は親が持つ
   onMealsChange: (update: (prev: Meal[]) => Meal[]) => void;
   // 記録の増減（削除・写真削除）。ホームはサジェストの再読込に使う
@@ -106,30 +117,39 @@ export function MealList({
 
   return (
     <>
-      {groupByEatenOn(meals).map(([date, items]) => (
-        <div key={date} className="stack stack--tight">
-          <h3 className="muted">{formatEatenOn(date)}</h3>
-          {/* list-style を消した ul は Safari が list 扱いしなくなるので role を戻す */}
-          <ul className="list" role="list">
-            {items.map((m) => (
-              <MealItem
-                key={m.id}
-                spaceId={spaceId}
-                meal={m}
-                editing={editingId === m.id}
-                onEdit={() => setEditingId(m.id)}
-                onCancelEdit={() => setEditingId(null)}
-                onSaved={saved}
-                onPhotosChange={setPhotos}
-                onToggle={toggle}
-                onRemove={remove}
-                onOpenPhoto={(meal, index) => setLightbox({ mealId: meal.id, index })}
-                onError={onError}
-              />
-            ))}
-          </ul>
-        </div>
-      ))}
+      {view === "grid" ? (
+        <PhotoGrid
+          spaceId={spaceId}
+          meals={meals}
+          // セルの飛び先は拡大表示。代表（1 枚目）から開き、中で残りを送れる
+          onOpenCell={(meal) => setLightbox({ mealId: meal.id, index: 0 })}
+        />
+      ) : (
+        groupByEatenOn(meals).map(([date, items]) => (
+          <div key={date} className="stack stack--tight">
+            <h3 className="muted">{formatEatenOn(date)}</h3>
+            {/* list-style を消した ul は Safari が list 扱いしなくなるので role を戻す */}
+            <ul className="list" role="list">
+              {items.map((m) => (
+                <MealItem
+                  key={m.id}
+                  spaceId={spaceId}
+                  meal={m}
+                  editing={editingId === m.id}
+                  onEdit={() => setEditingId(m.id)}
+                  onCancelEdit={() => setEditingId(null)}
+                  onSaved={saved}
+                  onPhotosChange={setPhotos}
+                  onToggle={toggle}
+                  onRemove={remove}
+                  onOpenPhoto={(meal, index) => setLightbox({ mealId: meal.id, index })}
+                  onError={onError}
+                />
+              ))}
+            </ul>
+          </div>
+        ))
+      )}
       <PhotoLightbox
         spaceId={spaceId}
         meal={lightboxMeal}
@@ -553,7 +573,9 @@ function PhotoLightbox({
   const photos = meal?.photos ?? [];
   const carousel = useCarousel(photos.length);
   const { goTo } = carousel;
-  useEffect(() => {
+  // paint 前（useLayoutEffect）に位置を合わせる。paint 後だと、前回開いたときの
+  // 位置のまま 1 フレーム描かれる（札が「2 / 2」で写真は 1 枚目、のような一瞬のずれ）
+  useLayoutEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
     if (meal && !dialog.open) {
@@ -600,6 +622,11 @@ function PhotoLightbox({
               </li>
             ))}
           </ul>
+          {/* なにを・いつ食べたか。グリッドから開くと料理名はここにしか無い（requirements 13） */}
+          <p className="lightbox__caption">
+            <strong>{meal.name}</strong>{" "}
+            <span className="lightbox__caption-date">{formatEatenOn(meal.eatenOn)}</span>
+          </p>
           {photos.length > 1 && (
             <CarouselNav index={carousel.index} count={photos.length} onGoTo={carousel.goTo} />
           )}

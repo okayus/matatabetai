@@ -314,6 +314,54 @@
     block-size: auto;
     max-block-size: 60dvh;
   }
+  /* タイムラインの写真グリッド（requirements 13）。1 投稿 1 セルの壁。
+     スマホで 3 列になる下限 = セルは 100〜120px 前後で、サムネ 320px が DPR 3 でもほぼ等倍。
+     広い画面は列が増える（auto-fill: 少ないときにセルが間延びしない） */
+  .photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr));
+    gap: var(--space-1);
+  }
+  .photo-cell {
+    position: relative;
+    display: block;
+    inline-size: 100%;
+    aspect-ratio: 1;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: calc(var(--radius) / 2);
+    background: none;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .photo-cell img {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+  /* 写真の上に重ねる印（♥ = またたべたい、⧉ = まだある）。写真の明暗によらず読めるよう暗い座布団 */
+  .photo-cell__mata,
+  .photo-cell__count {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    padding: 2px var(--space-1);
+    border-radius: 999px;
+    background: rgb(0 0 0 / 0.45);
+    color: #ffffff;
+    font-size: 0.75rem;
+    line-height: 1;
+  }
+  .photo-cell__mata {
+    inset-block-start: var(--space-1);
+    inset-inline-start: var(--space-1);
+  }
+  .photo-cell__count {
+    inset-block-start: var(--space-1);
+    inset-inline-end: var(--space-1);
+    padding-block: 4px;
+  }
   .carousel-nav {
     display: flex;
     justify-content: center;
@@ -525,6 +573,15 @@
   /* 拡大表示の背後は明暗どちらでも暗い。札だけは白で置く（ボタンは surface を持っている） */
   .lightbox .carousel-count {
     color: #ffffff;
+  }
+  /* なにを・いつ食べたか。グリッドから開いたとき、料理名はここにしか無い */
+  .lightbox__caption {
+    color: #ffffff;
+    text-align: center;
+  }
+  .lightbox__caption-date {
+    color: rgb(255 255 255 / 0.75);
+    font-size: 0.875rem;
   }
 }
 
