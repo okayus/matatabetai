@@ -7,6 +7,7 @@ import {
   TagName,
   frozenRecipeColumns,
   isHttpUrl,
+  likePattern,
   normalizeName,
   uniqueTagNames,
 } from "./meal";
@@ -85,6 +86,31 @@ describe("MealListQuery", () => {
   it("mataTabetai は「絞るか絞らないか」の一択 — \"1\" 以外の値は弾く", () => {
     expect(MealListQuery.safeParse({ tags: [], mataTabetai: "true" }).success).toBe(false);
     expect(MealListQuery.safeParse({ tags: [], mataTabetai: "0" }).success).toBe(false);
+  });
+  it("q は trim して受け、空・空白だけは「絞らない」（undefined）", () => {
+    const r = MealListQuery.safeParse({ tags: [], q: "  カレー " });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.q).toBe("カレー");
+    const blank = MealListQuery.safeParse({ tags: [], q: "   " });
+    expect(blank.success).toBe(true);
+    if (blank.success) expect(blank.data.q).toBeUndefined();
+    const none = MealListQuery.safeParse({ tags: [] });
+    expect(none.success).toBe(true);
+    if (none.success) expect(none.data.q).toBeUndefined();
+  });
+  it("q は 100 文字まで、制御文字は弾く", () => {
+    expect(MealListQuery.safeParse({ tags: [], q: "あ".repeat(100) }).success).toBe(true);
+    expect(MealListQuery.safeParse({ tags: [], q: "あ".repeat(101) }).success).toBe(false);
+    expect(MealListQuery.safeParse({ tags: [], q: "カレー\u0007" }).success).toBe(false);
+  });
+});
+
+describe("likePattern", () => {
+  it("両端に % を付けて部分一致にする", () => {
+    expect(likePattern("カレー")).toBe("%カレー%");
+  });
+  it("入力の % _ \\ はワイルドカードにしない（ESCAPE '\\' で読む形）", () => {
+    expect(likePattern("50%_off\\")).toBe("%50\\%\\_off\\\\%");
   });
 });
 

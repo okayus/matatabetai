@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   addCredentialBegin,
   addCredentialVerify,
+  createSpace,
   deleteCredential,
   describeFailure,
   listCredentials,
@@ -10,8 +11,10 @@ import {
   updateMe,
   type Credential,
   type Me,
+  type SpaceSummary,
 } from "../api";
 import { useAuth } from "../auth";
+import { Link } from "../components/Link";
 import { formatDateTime } from "../format";
 import { navigate } from "../router";
 import {
@@ -21,9 +24,12 @@ import {
   signalUserDetails,
 } from "../webauthn";
 
+// 自分のこと: 表示名・パスキー・所属しているスペース。スペース一覧と「自分のスペースを作る」は
+// 所属の管理なので、記録を眺めるホームではなくここに置く（ADR-009 §5）
 export function AccountPage({ me }: { me: Me }) {
   const { refresh, clear } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const ownsSpace = me.spaces.some((s) => s.role === "owner");
 
   const onLogout = async () => {
     await logout();
@@ -63,12 +69,76 @@ export function AccountPage({ me }: { me: Me }) {
         )}
       </form>
       <PasskeysSection me={me} />
+      <SpacesSection spaces={me.spaces} />
+      {!ownsSpace && <CreateSpaceForm />}
       <div className="card stack">
         <button type="button" className="btn btn--danger" onClick={() => void onLogout()}>
           ログアウト
         </button>
       </div>
     </section>
+  );
+}
+
+function SpacesSection({ spaces }: { spaces: SpaceSummary[] }) {
+  if (spaces.length === 0) return null;
+  return (
+    <div className="card stack">
+      <h2>スペース</h2>
+      <ul className="list" role="list">
+        {spaces.map((s) => (
+          <li key={s.id} className="list-item">
+            <div className="stack stack--tight">
+              <strong>{s.name}</strong>
+              <span className="muted">
+                <span className="badge">{s.role === "owner" ? "オーナー" : "メンバー"}</span> {s.memberCount} 人
+              </span>
+            </div>
+            <Link href={`/spaces/${s.id}/settings`} className="btn btn--ghost">
+              設定
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function CreateSpaceForm() {
+  const { refresh } = useAuth();
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const name = String(new FormData(e.currentTarget).get("name") ?? "");
+    setBusy(true);
+    setError(null);
+    const r = await createSpace(name);
+    if (r.isErr()) {
+      setError(describeFailure(r.error));
+      setBusy(false);
+      return;
+    }
+    await refresh();
+    setBusy(false);
+  };
+  return (
+    <form className="card stack" onSubmit={(e) => void onSubmit(e)}>
+      <h2>自分のスペースを作る</h2>
+      <p className="muted">作れるのは 1 つだけです。家族を招待して一緒に記録できます。</p>
+      <div className="field">
+        <label htmlFor="spaceName">スペースの名前</label>
+        <input id="spaceName" name="name" required maxLength={40} placeholder="例: わが家の食卓" />
+      </div>
+      <button type="submit" className="btn btn--primary" disabled={busy}>
+        作る
+      </button>
+      {error && (
+        <p role="alert" className="alert">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }
 

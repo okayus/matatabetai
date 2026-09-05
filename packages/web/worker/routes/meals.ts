@@ -28,17 +28,20 @@ function fail(c: Context<SpaceEnv>, error: AppError) {
 // /api/spaces/:spaceId/meals — spaceMiddleware が所属を証明済み。
 // meal を引く文は必ず space_id も比較する（別スペースの meal id を当てても 404）。
 export const mealRoutes = new Hono<SpaceEnv>()
-  // ?tags=a&tags=b（AND）と ?mataTabetai=1 で絞り込める（requirements 6 / 9 のタグ検索・またたべたい一覧）
+  // ?tags=a&tags=b（AND）・?mataTabetai=1・?q=（料理名の部分一致）で絞り込める
+  // （requirements 6 / 9 / 15 のタグ検索・またたべたい一覧・ホームの検索）
   .get("/", async (c) => {
     const q = parseWith(MealListQuery, {
       tags: c.req.queries("tags") ?? [],
       mataTabetai: c.req.query("mataTabetai"),
+      q: c.req.query("q"),
     });
     if (q.isErr()) return fail(c, q.error);
     return c.json(
       await listMeals(drizzle(c.env.DB), c.var.spaceId, {
         tagNames: q.value.tags,
         mataTabetaiOnly: q.value.mataTabetai,
+        nameQuery: q.value.q,
       }),
     );
   })

@@ -21,11 +21,12 @@ test("OGP が取れた URL はカードになり、取れない URL はプレー
   await page.getByLabel("表示名").fill("e2e-ogp");
   await page.getByLabel("登録トークン").fill(E2E_INITIAL_REGISTRATION_TOKEN);
   await page.getByRole("button", { name: "パスキーを作って登録" }).click();
-  await expect(page.getByRole("heading", { name: /こんにちは、e2e-ogp さん/ })).toBeVisible();
+  // ホームの h1 と region 名はスペース名（ADR-009 §5）
+  await expect(page.getByRole("heading", { name: "e2e-ogpの食卓" })).toBeVisible();
 
   // 記録フォームは dialog（requirements 14）、タイムラインの既定は写真だけ（requirements 15）。
   // リンクのカードは くわしく にあるので、読み込み直すたびに押し直す
-  const feed = page.getByRole("region", { name: "みんなの記録" });
+  const feed = page.getByRole("region", { name: "e2e-ogpの食卓" });
   const composer = page.getByRole("dialog", { name: "たべたものを記録" });
   const openComposer = () => page.getByRole("button", { name: "たべたものを記録する" }).click();
   const showDetails = () => feed.getByRole("button", { name: "くわしく" }).click();

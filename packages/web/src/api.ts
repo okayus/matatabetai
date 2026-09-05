@@ -202,14 +202,17 @@ export const removeMember = (spaceId: string, userId: string) =>
   del<Record<string, never>>(`/api/spaces/${spaceId}/members/${userId}`);
 
 // --- meals --------------------------------------------------------------------------------
-// tags は AND（同じ名前を繰り返して渡す）、mataTabetai は「またたべたい」だけに絞る
+// tags は AND（同じ名前を繰り返して渡す）、mataTabetai は「またたべたい」だけに絞る、
+// q は料理名の部分一致（ADR-009 §1）。3 つは直交して合成できる
 export type MealListFilter = {
   tags?: readonly string[] | undefined;
   mataTabetai?: boolean | undefined;
+  q?: string | undefined;
 };
 export const listMeals = (spaceId: string, filter: MealListFilter = {}) => {
   const params = new URLSearchParams((filter.tags ?? []).map((name) => ["tags", name]));
   if (filter.mataTabetai) params.set("mataTabetai", "1");
+  if (filter.q) params.set("q", filter.q);
   const query = params.toString();
   return api<Meal[]>(`/api/spaces/${spaceId}/meals${query ? `?${query}` : ""}`);
 };

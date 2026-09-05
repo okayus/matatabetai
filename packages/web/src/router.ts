@@ -21,6 +21,16 @@ export function usePath(): string {
   );
 }
 
+// ホームの絞り込みは URL のクエリが持つ（ADR-009 §4）。"?q=…" か ""。
+// 解釈は src/lib/meal-filter.ts で、ここは文字列を配るだけ
+export function useSearch(): string {
+  return useSyncExternalStore(
+    subscribe,
+    () => window.location.search,
+    () => "",
+  );
+}
+
 export function navigate(to: string, opts: { replace?: boolean } = {}): void {
   if (opts.replace) history.replaceState(null, "", to);
   else history.pushState(null, "", to);

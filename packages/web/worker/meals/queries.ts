@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/d1";
 import { mealTags, meals, tags, users } from "../db/schema";
 import type { LinkPreview } from "../domain/link-preview";
-import { normalizeName, type MealLinks, type MealType } from "../domain/meal";
+import { likePattern, normalizeName, type MealLinks, type MealType } from "../domain/meal";
 import { previewsByMealIds } from "./link-previews";
 import { photosByMealIds, type MealPhotoSummary } from "./photos";
 
@@ -32,9 +32,15 @@ export type MealSummary = MealLinks & {
 // 直近だけ返す（ページングは要件が出てから）。D1 の bound parameter 上限に inArray が収まる値にする
 export const MEAL_LIST_LIMIT = 50;
 
-// またたべたい一覧（requirements 9）とタグ検索 AND（requirements 6）は、別リソースではなく
-// 同じ一覧の絞り込み。2 つは直交して合成できる（「またたべたいの中からじゃがいもで」）
-export type MealListFilter = { tagNames: readonly string[]; mataTabetaiOnly: boolean };
+// またたべたい一覧（requirements 9）・タグ検索 AND（requirements 6）・料理名の部分一致
+// （requirements 15、ADR-009 §1）は、別リソースではなく同じ一覧の絞り込み。
+// 3 つは直交して合成できる（「またたべたいの中からじゃがいもで、名前にカレー」）
+export type MealListFilter = {
+  tagNames: readonly string[];
+  mataTabetaiOnly: boolean;
+  // 料理名の部分一致。保存側と同じ正規形（normalizeName）どうしで比べる
+  nameQuery: string | undefined;
+};
 
 // 一覧・単体で同じ列を返す（表示名は created_by の user 行から引く）
 const MEAL_COLUMNS = {
@@ -77,6 +83,7 @@ export async function listMeals(
   filter: MealListFilter,
 ): Promise<MealSummary[]> {
   const keys = filter.tagNames.map(normalizeName);
+  const needle = filter.nameQuery === undefined ? "" : normalizeName(filter.nameQuery);
   const rows = await db
     .select(MEAL_COLUMNS)
     .from(meals)
@@ -86,6 +93,8 @@ export async function listMeals(
         eq(meals.spaceId, spaceId),
         filter.mataTabetaiOnly ? eq(meals.mataTabetai, true) : undefined,
         keys.length === 0 ? undefined : inArray(meals.id, mealIdsWithAllTags(db, spaceId, keys)),
+        // SQLite の LIKE は文字単位で、両辺とも正規形なので大文字小文字の差は残っていない
+        needle === "" ? undefined : sql`${meals.nameNormalized} like ${likePattern(needle)} escape '\\'`,
       ),
     )
     .orderBy(desc(meals.eatenOn), desc(meals.createdAt))

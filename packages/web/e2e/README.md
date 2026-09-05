@@ -2,7 +2,7 @@
 
 配線と「存在の事実」だけを見る 4 spec。ドメインの意味は `worker/**/*.test.ts`（vitest）。
 
-- `golden-path` — 初回登録 → リロードで残る → 招待リンク → 別ブラウザが招待から参加 → メンバーに並ぶ → ログアウト → ログイン
+- `golden-path` — 初回登録 → リロードで残る → 記録（写真・サジェスト・編集・削除）→ ホームの検索（♥ / タグ AND / 料理名、URL に残る）→ ふりかえりの集計と札・行からホームへ → 招待リンク → 別ブラウザが招待から参加 → メンバーに並ぶ → ログアウト → ログイン
 - `authorization-boundary` — 他スペースは API 404（本文固定）+ UI のアクセス拒否
 - `link-preview` — 投稿 → 応答後の OGP 取得 → カード（画像は private R2 経由）/ 取れない URL はプレーンリンクのまま
 - `security-headers` — CSP / X-Frame-Options / nosniff / Referrer-Policy が `/`・`/api`・`/health` に付く、未知の `/api/*` が JSON、CSRF Origin 検査
