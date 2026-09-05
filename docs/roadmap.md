@@ -30,7 +30,7 @@
 - [x] 投稿の編集（[requirements](requirements.md) 11）— [ADR-008](adr/008-meal-edit.md)
 - [x] 写真のカルーセル（[requirements](requirements.md) 12）— 2026-09-03 追加
 - [x] 写真グリッドのタイムライン（[requirements](requirements.md) 13）— 2026-09-03 追加
-- [ ] 投稿フォームのダイアログ化（[requirements](requirements.md) 14）— 2026-09-05 追加
+- [x] 投稿フォームのダイアログ化（[requirements](requirements.md) 14）— 2026-09-05 追加
 - [ ] 写真ファーストのトップページ（[requirements](requirements.md) 15: 既定は写真だけ・検索 + 投稿済み写真）— 2026-09-05 追加
 
 ## Phase 4 — 公開前の堅牢化
