@@ -23,11 +23,19 @@ test("OGP が取れた URL はカードになり、取れない URL はプレー
   await page.getByRole("button", { name: "パスキーを作って登録" }).click();
   await expect(page.getByRole("heading", { name: /こんにちは、e2e-ogp さん/ })).toBeVisible();
 
+  // 記録フォームは dialog（requirements 14）、タイムラインの既定は写真だけ（requirements 15）。
+  // リンクのカードは くわしく にあるので、読み込み直すたびに押し直す
   const feed = page.getByRole("region", { name: "みんなの記録" });
-  await page.getByLabel("料理名").fill("プレビューの肉じゃが");
-  await page.getByLabel("レシピ URL").fill(FIXTURE_URL);
-  await page.getByLabel("お店・商品 URL").fill(UNREACHABLE_URL);
-  await page.getByRole("button", { name: "記録する" }).click();
+  const composer = page.getByRole("dialog", { name: "たべたものを記録" });
+  const openComposer = () => page.getByRole("button", { name: "たべたものを記録する" }).click();
+  const showDetails = () => feed.getByRole("button", { name: "くわしく" }).click();
+  await openComposer();
+  await composer.getByLabel("料理名").fill("プレビューの肉じゃが");
+  await composer.getByLabel("レシピ URL").fill(FIXTURE_URL);
+  await composer.getByLabel("お店・商品 URL").fill(UNREACHABLE_URL);
+  await composer.getByRole("button", { name: "記録する" }).click();
+  await expect(composer).toBeHidden();
+  await showDetails();
   await expect(feed.getByText("プレビューの肉じゃが", { exact: true })).toBeVisible();
 
   // 投稿の応答時点ではどちらも取得中。カードはまだ無く、リンクとしては最初から働く
@@ -39,6 +47,7 @@ test("OGP が取れた URL はカードになり、取れない URL はプレー
   const card = feed.getByRole("link", { name: /e2e レシピ: ほくほく肉じゃが/ });
   await expect(async () => {
     await page.reload();
+    await showDetails();
     await expect(card).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
   await expect(card).toHaveAttribute("href", FIXTURE_URL);
@@ -79,6 +88,7 @@ test("OGP が取れた URL はカードになり、取れない URL はプレー
   const swappedCard = feed.getByRole("link", { name: /e2e レシピ: 貼り替え後のカレー/ });
   await expect(async () => {
     await page.reload();
+    await showDetails();
     await expect(swappedCard).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
   await expect(swappedCard).toHaveAttribute("href", SWAPPED_URL);
@@ -93,12 +103,15 @@ test("OGP が取れた URL はカードになり、取れない URL はプレー
 
   // OGP を出さないページは <title> を見出しにした画像なしのカードになる。
   // og:* → <title> の fallback は HTMLRewriter のセレクタが実際に当たっているかの検査でもある
-  await page.getByLabel("料理名").fill("タイトルだけの記録");
-  await page.getByLabel("レシピ URL").fill(TITLE_ONLY_URL);
-  await page.getByRole("button", { name: "記録する" }).click();
+  await openComposer();
+  await composer.getByLabel("料理名").fill("タイトルだけの記録");
+  await composer.getByLabel("レシピ URL").fill(TITLE_ONLY_URL);
+  await composer.getByRole("button", { name: "記録する" }).click();
+  await expect(composer).toBeHidden();
   const titleOnlyCard = feed.getByRole("link", { name: /タイトルだけのページ \| e2e 商店/ });
   await expect(async () => {
     await page.reload();
+    await showDetails();
     await expect(titleOnlyCard).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
   await expect(titleOnlyCard.locator("img")).toHaveCount(0);
