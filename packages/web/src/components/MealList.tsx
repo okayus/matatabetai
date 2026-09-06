@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -28,9 +29,9 @@ import { MealFields } from "./MealFields";
 import { PhotoGrid } from "./PhotoGrid";
 
 // みんなの記録とふりかえりで共通の一覧。日付見出しでまとめ、またたべたいトグル・削除・
-// 写真の拡大（<dialog>）までここが持つ。読み込み・並び・空表示は親の責務。
+// 記録の詳細（<dialog>）までここが持つ。読み込み・並び・空表示は親の責務。
 // またたべたい絞り込み中に ♥ を外しても行は消さない（誤タップを戻せる。次の読み込みで消える）。
-// view="grid" は同じ配列を写真だけの壁に描き替える（requirements 13。拡大と削除は共有）
+// view="grid" は同じ配列を写真だけの壁に描き替える（requirements 13。詳細は共有）
 export function MealList({
   spaceId,
   meals,
@@ -45,11 +46,13 @@ export function MealList({
   onMealsChange: (update: (prev: Meal[]) => Meal[]) => void;
   onError: (message: string | null) => void;
 }) {
-  // 開いている写真は「どの記録の何枚目か」で持つ。meal そのものを控えると、開いている間に
-  // 写真が減ったとき（拡大したまま削除）に古い配列を見てしまう
-  const [lightbox, setLightbox] = useState<{ mealId: string; index: number } | null>(null);
-  // 直せるのは一度に 1 件（ADR-008 §7）。行をその場でフォームに変える
+  // 開いている詳細は「どの記録の何枚目から」で持つ。meal そのものを控えると、開いている間に
+  // 内容が変わったとき（編集・写真の足し引き）に古い値を見てしまう
+  const [detail, setDetail] = useState<{ mealId: string; index: number } | null>(null);
+  // 直せるのは一度に 1 件（ADR-008 §7）。一覧の行はその場でフォームに変わり、詳細は中身を
+  // フォームに差し替える。詳細を開くときに行の編集を畳むので、フォームが 2 つ出ることはない
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [detailEditing, setDetailEditing] = useState(false);
 
   // 写真は保存を待たずその場で足し引きする（meal は既にある — ADR-008 §4）
   const setPhotos = (mealId: string, update: (photos: MealPhoto[]) => MealPhoto[]) =>
@@ -62,6 +65,16 @@ export function MealList({
       sortByRecency(prev.map((x) => (x.id === updated.id ? { ...updated, photos: x.photos } : x))),
     );
     setEditingId(null);
+    setDetailEditing(false);
+  };
+  const openDetail = (meal: Meal, index: number) => {
+    setEditingId(null);
+    setDetailEditing(false);
+    setDetail({ mealId: meal.id, index });
+  };
+  const closeDetail = () => {
+    setDetail(null);
+    setDetailEditing(false);
   };
 
   const toggle = async (m: Meal) => {
@@ -85,29 +98,13 @@ export function MealList({
       onError(describeFailure(r.error));
       return;
     }
+    // 記録ごと消えると詳細は開いたままにできない（下の find が null → dialog が閉じる）
     onMealsChange((prev) => prev.filter((x) => x.id !== m.id));
   };
-  const removePhoto = async (meal: Meal, photo: MealPhoto) => {
-    if (!confirm("この写真を削除しますか？")) return;
-    onError(null);
-    const r = await deleteMealPhoto(spaceId, meal.id, photo.id);
-    if (r.isErr()) {
-      onError(describeFailure(r.error));
-      return;
-    }
-    onMealsChange((prev) =>
-      prev.map((x) =>
-        x.id === meal.id ? { ...x, photos: x.photos.filter((p) => p.id !== photo.id) } : x,
-      ),
-    );
-    // 消したら閉じる（残りを見るのは開き直せばよい。消し続けるより一度カードへ戻る方が迷わない）
-    setLightbox(null);
-  };
 
-  // 一覧の配列は親が持つので、拡大中の記録も毎回そこから引き直す。
-  // 記録ごと消えた・写真が 0 枚になったときは null → dialog が閉じる
-  const opened = lightbox ? meals.find((m) => m.id === lightbox.mealId) : undefined;
-  const lightboxMeal = opened && opened.photos.length > 0 ? opened : null;
+  // 一覧の配列は親が持つので、開いている記録も毎回そこから引き直す。
+  // 記録ごと消えたときは null → dialog が閉じる
+  const detailMeal = detail ? (meals.find((m) => m.id === detail.mealId) ?? null) : null;
 
   return (
     <>
@@ -115,8 +112,8 @@ export function MealList({
         <PhotoGrid
           spaceId={spaceId}
           meals={meals}
-          // セルの飛び先は拡大表示。代表（1 枚目）から開き、中で残りを送れる
-          onOpenCell={(meal) => setLightbox({ mealId: meal.id, index: 0 })}
+          // セルの飛び先は記録の詳細。代表（1 枚目）から開き、中で残りを送れる
+          onOpenCell={(meal) => openDetail(meal, 0)}
         />
       ) : (
         groupByEatenOn(meals).map(([date, items]) => (
@@ -136,7 +133,7 @@ export function MealList({
                   onPhotosChange={setPhotos}
                   onToggle={toggle}
                   onRemove={remove}
-                  onOpenPhoto={(meal, index) => setLightbox({ mealId: meal.id, index })}
+                  onOpenDetail={openDetail}
                   onError={onError}
                 />
               ))}
@@ -144,12 +141,19 @@ export function MealList({
           </div>
         ))
       )}
-      <PhotoLightbox
+      <MealDetailDialog
         spaceId={spaceId}
-        meal={lightboxMeal}
-        openAt={lightbox?.index ?? 0}
-        onClose={() => setLightbox(null)}
-        onDelete={removePhoto}
+        meal={detailMeal}
+        openAt={detail?.index ?? 0}
+        editing={detailEditing}
+        onEdit={() => setDetailEditing(true)}
+        onCancelEdit={() => setDetailEditing(false)}
+        onSaved={saved}
+        onPhotosChange={setPhotos}
+        onToggle={toggle}
+        onRemove={remove}
+        onClose={closeDetail}
+        onError={onError}
       />
     </>
   );
@@ -176,12 +180,12 @@ type MealItemProps = {
   onPhotosChange: (mealId: string, update: (photos: MealPhoto[]) => MealPhoto[]) => void;
   onToggle: (m: Meal) => void;
   onRemove: (m: Meal) => void;
-  onOpenPhoto: (meal: Meal, index: number) => void;
+  onOpenDetail: (meal: Meal, index: number) => void;
   onError: (message: string | null) => void;
 };
 
 function MealItem(props: MealItemProps) {
-  const { spaceId, meal, editing, onEdit, onToggle, onRemove, onOpenPhoto } = props;
+  const { spaceId, meal, editing, onEdit, onToggle, onRemove, onOpenDetail } = props;
   // 閉じたときに「編集」へ焦点を戻す（フォームごと消えると焦点が body に落ちる）
   const editButton = useRef<HTMLButtonElement>(null);
   const wasEditing = useRef(false);
@@ -193,7 +197,15 @@ function MealItem(props: MealItemProps) {
   if (editing) {
     return (
       <li className="list-item list-item--column">
-        <MealEditForm {...props} />
+        <MealEditForm
+          spaceId={props.spaceId}
+          meal={props.meal}
+          idPrefix={`edit-${props.meal.id}-`}
+          onCancelEdit={props.onCancelEdit}
+          onSaved={props.onSaved}
+          onPhotosChange={props.onPhotosChange}
+          onError={props.onError}
+        />
       </li>
     );
   }
@@ -204,7 +216,7 @@ function MealItem(props: MealItemProps) {
         {meal.mealType && <span className="badge">{MEAL_TYPE_LABEL[meal.mealType]}</span>}
       </div>
       {meal.photos.length > 0 && (
-        <MealPhotos spaceId={spaceId} meal={meal} onOpenPhoto={onOpenPhoto} />
+        <MealPhotos spaceId={spaceId} meal={meal} onOpenDetail={onOpenDetail} />
       )}
       {meal.tags.length > 0 && (
         <div className="row">
@@ -247,20 +259,33 @@ function MealItem(props: MealItemProps) {
   );
 }
 
-// 行をその場でフォームに変える（ADR-008 §7）。欄は投稿フォームと同じ MealFields で、
-// サジェストの札は出さない — 引き継ぎは「新しく記録する」ための道具で、ここに置くと
-// 自分の記録を他の回の内容で上書きできてしまう。
-// 保存は内容の全置き換え（PUT）で、写真だけは保存を待たずその場で足し引きする（§4）
+type MealEditFormProps = {
+  spaceId: string;
+  meal: Meal;
+  // 同じページに 2 つ出ることがある（一覧の行 / 詳細の中）ので、label の htmlFor を分ける
+  idPrefix: string;
+  onCancelEdit: () => void;
+  onSaved: (updated: Meal) => void;
+  onPhotosChange: (mealId: string, update: (photos: MealPhoto[]) => MealPhoto[]) => void;
+  onError: (message: string | null) => void;
+};
+
+// 記録を直すフォーム（ADR-008 §7）。欄は投稿フォームと同じ MealFields で、サジェストの札は
+// 出さない — 引き継ぎは「新しく記録する」ための道具で、ここに置くと自分の記録を他の回の内容で
+// 上書きできてしまう。保存は内容の全置き換え（PUT）で、写真だけは保存を待たずその場で足し引きする（§4）。
+// 写真を消せるのはここだけ（ADR-011 §4）— 眺める場に消すボタンを置かない
 function MealEditForm({
   spaceId,
   meal,
+  idPrefix,
   onCancelEdit,
   onSaved,
   onPhotosChange,
   onError,
-}: MealItemProps) {
+}: MealEditFormProps) {
   const [form, setForm] = useState<MealFormState>(() => mealFormFrom(meal));
   const [busy, setBusy] = useState(false);
+  const id = (suffix: string) => `${idPrefix}${suffix}`;
 
   const set = <K extends keyof MealFormState>(key: K, value: MealFormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -315,13 +340,13 @@ function MealEditForm({
   return (
     <form className="stack" aria-label="記録を編集" onSubmit={(e) => void onSubmit(e)}>
       <MealFields
-        idPrefix={`edit-${meal.id}-`}
+        idPrefix={idPrefix}
         form={form}
         onChange={set}
         photos={
           <div className="field">
-            <label htmlFor={`edit-${meal.id}-Photos`}>写真</label>
-            <span id={`edit-${meal.id}-PhotosHint`} className="hint">
+            <label htmlFor={id("Photos")}>写真</label>
+            <span id={id("PhotosHint")} className="hint">
               写真の足し引きは「保存する」を待たずすぐ反映されます
             </span>
             {meal.photos.length > 0 && (
@@ -349,11 +374,11 @@ function MealEditForm({
               </ul>
             )}
             <input
-              id={`edit-${meal.id}-Photos`}
+              id={id("Photos")}
               type="file"
               accept="image/*"
               multiple
-              aria-describedby={`edit-${meal.id}-PhotosHint`}
+              aria-describedby={id("PhotosHint")}
               disabled={busy}
               onChange={(e) => void onAddPhotos(e)}
             />
@@ -428,30 +453,34 @@ function linkLabel(url: string): string {
 // 写真の送り（requirements 12）。横スクロール + scroll-snap に任せる — 指のスワイプの慣性も
 // 端の跳ね返りもブラウザのものが一番よく、JS の drag 実装より触る量が少ない。位置は scrollLeft
 // から数える: scrollsnapchange / scroll-initial-target / scroll-state クエリはどれも Chrome だけ
-// （modern-web-guidance 2026-09-04）で、この家族は iPhone と Android の両方を使う
+// （modern-web-guidance 2026-09-06）で、この家族は iPhone と Android の両方を使う。
+// goTo / onScroll は useCallback で安定させる — 詳細（dialog）が「開いた直後・編集から戻った直後に
+// 位置を合わせる」を effect の依存で表すため
 function useCarousel(count: number) {
   const ref = useRef<HTMLUListElement>(null);
   const [scrolled, setScrolled] = useState(0);
-  return {
-    ref,
-    index: clampIndex(scrolled, count),
-    onScroll: () => {
-      const el = ref.current;
-      if (el) setScrolled(snapIndex(el.scrollLeft, el.clientWidth, count));
-    },
-    // behavior 未指定（"auto"）は CSS の scroll-behavior に従う = 動きを減らす設定なら滑らかにしない
-    goTo: (next: number, behavior: ScrollBehavior = "auto") => {
+  const onScroll = useCallback(() => {
+    const el = ref.current;
+    if (el) setScrolled(snapIndex(el.scrollLeft, el.clientWidth, count));
+  }, [count]);
+  // behavior 未指定（"auto"）は CSS の scroll-behavior に従う = 動きを減らす設定なら滑らかにしない
+  const goTo = useCallback(
+    (next: number, behavior: ScrollBehavior = "auto") => {
       const el = ref.current;
       if (!el) return;
       const target = clampIndex(next, count);
       setScrolled(target); // 滑らかに動く間も札は先に合わせる（押した手応えを遅らせない）
       el.scrollTo({ left: target * el.clientWidth, behavior });
     },
-  };
+    [count],
+  );
+  return { ref, index: clampIndex(scrolled, count), onScroll, goTo };
 }
 
+type Carousel = ReturnType<typeof useCarousel>;
+
 // ← 2 / 3 → の 1 行。指のない環境（マウス・キーボード）のための、スワイプと同じ動きの入口。
-// 写真には重ねない（小さい画面では料理が隠れる）。端では aria-disabled にとどめる —
+// 一覧のカードでは写真に重ねない（小さい画面では料理が隠れる）。端では aria-disabled にとどめる —
 // disabled にすると押した瞬間にボタンが無効になり、焦点が body へ落ちて送る手が止まる
 function CarouselNav({
   index,
@@ -501,11 +530,11 @@ function CarouselNav({
 function MealPhotos({
   spaceId,
   meal,
-  onOpenPhoto,
+  onOpenDetail,
 }: {
   spaceId: string;
   meal: Meal;
-  onOpenPhoto: (meal: Meal, index: number) => void;
+  onOpenDetail: (meal: Meal, index: number) => void;
 }) {
   const carousel = useCarousel(meal.photos.length);
   const single = meal.photos.length === 1;
@@ -519,10 +548,16 @@ function MealPhotos({
       >
         {meal.photos.map((p, i) => (
           <li key={p.id}>
-            <button type="button" className="photo-slide" onClick={() => onOpenPhoto(meal, i)}>
+            {/* 飛び先は記録の詳細（その 1 枚から）。名前はボタンが持ち、絵は装飾に落とす */}
+            <button
+              type="button"
+              className="photo-slide"
+              aria-label={`${meal.name} の写真 ${i + 1} をひらく`}
+              onClick={() => onOpenDetail(meal, i)}
+            >
               <img
                 src={mealPhotoUrl(spaceId, meal.id, p.id)}
-                alt={`${meal.name} の写真 ${i + 1} を拡大`}
+                alt=""
                 width={p.width}
                 height={p.height}
                 loading="lazy"
@@ -539,94 +574,259 @@ function MealPhotos({
   );
 }
 
-// 拡大表示。<dialog> の showModal で開く（Esc は native、背景タップは e.target === dialog で判定）。
-// 中でも同じカルーセルで送れる（指・← →・キーボードの矢印）。開くのはタップした 1 枚から
-function PhotoLightbox({
+// 点で示す行き先。多すぎると点の意味が消えるので、この本数までのときだけ出す（札は常に出る）
+const MAX_DOTS = 8;
+
+// 詳細の写真（ADR-011 §2）。送りは指のスワイプ（scroll-snap）に任せ、その上に「送れること」が
+// ひと目で分かる操作を重ねる: ← → の丸ボタン・いま何枚目かの札・行き先の点。
+// タップして初めて出る操作は、出ていないのと同じ。舞台の高さは決め打ちで、縦横の混ざった写真を
+// 送っても伸び縮みしない（下の料理名とボタンが動くと、読めないし押し損ねる）
+function PhotoStage({
+  spaceId,
+  meal,
+  carousel,
+}: {
+  spaceId: string;
+  meal: Meal;
+  carousel: Carousel;
+}) {
+  const photos = meal.photos;
+  const { ref, index, onScroll, goTo } = carousel;
+  if (photos.length === 0) {
+    return <p className="detail__nophoto">この記録に写真はありません。</p>;
+  }
+  const many = photos.length > 1;
+  return (
+    <div className="photo-stage">
+      <ul
+        ref={ref}
+        className="photo-carousel photo-carousel--stage"
+        role="list"
+        onScroll={onScroll}
+      >
+        {photos.map((p, i) => (
+          <li key={p.id}>
+            <img
+              src={mealPhotoUrl(spaceId, meal.id, p.id)}
+              alt={`${meal.name} の写真 ${i + 1}`}
+              width={p.width}
+              height={p.height}
+              loading="lazy"
+              decoding="async"
+            />
+          </li>
+        ))}
+      </ul>
+      {many && (
+        <>
+          <button
+            type="button"
+            className="photo-stage__nav photo-stage__nav--prev"
+            aria-disabled={index === 0}
+            onClick={() => goTo(index - 1)}
+          >
+            <Chevron back />
+            <span className="visually-hidden">前の写真</span>
+          </button>
+          <button
+            type="button"
+            className="photo-stage__nav photo-stage__nav--next"
+            aria-disabled={index === photos.length - 1}
+            onClick={() => goTo(index + 1)}
+          >
+            <Chevron />
+            <span className="visually-hidden">次の写真</span>
+          </button>
+          <p className="photo-stage__count">
+            {index + 1} / {photos.length}
+          </p>
+          {photos.length <= MAX_DOTS && (
+            <div className="photo-stage__dots">
+              {photos.map((p, i) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="photo-stage__dot"
+                  aria-current={i === index}
+                  onClick={() => goTo(i)}
+                >
+                  <span className="visually-hidden">{i + 1} 枚目の写真へ</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ← → の文字はフォント次第で中心がずれる（＋ を SVG にしたのと同じ理由 — ADR-009 §5）
+function Chevron({ back = false }: { back?: boolean }) {
+  return (
+    <svg className="photo-stage__chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d={back ? "M15 4.5 7.5 12 15 19.5" : "M9 4.5 16.5 12 9 19.5"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// 記録の詳細（requirements 16 / ADR-011）。写真をタップすると開く <dialog>（showModal —
+// Esc・Android の戻る・広い画面では背景のタップで閉じる。記録フォームと同じ流儀）。
+// 写真の壁からはここが唯一の入口なので、写真だけでなく記録の中身と、直す・またたべたい・消すを
+// すべてここに置く。編集は同じ dialog の中身を差し替える（ページを移らない）
+function MealDetailDialog({
   spaceId,
   meal,
   openAt,
+  editing,
+  onEdit,
+  onCancelEdit,
+  onSaved,
+  onPhotosChange,
+  onToggle,
+  onRemove,
   onClose,
-  onDelete,
+  onError,
 }: {
   spaceId: string;
   meal: Meal | null;
   openAt: number;
+  editing: boolean;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSaved: (updated: Meal) => void;
+  onPhotosChange: (mealId: string, update: (photos: MealPhoto[]) => MealPhoto[]) => void;
+  onToggle: (m: Meal) => void;
+  onRemove: (m: Meal) => void;
   onClose: () => void;
-  onDelete: (meal: Meal, photo: MealPhoto) => void;
+  onError: (message: string | null) => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const photos = meal?.photos ?? [];
-  const carousel = useCarousel(photos.length);
-  const { goTo } = carousel;
-  // paint 前（useLayoutEffect）に位置を合わせる。paint 後だと、前回開いたときの
-  // 位置のまま 1 フレーム描かれる（札が「2 / 2」で写真は 1 枚目、のような一瞬のずれ）
+  const isOpen = meal !== null;
+  const carousel = useCarousel(meal?.photos.length ?? 0);
+  const { goTo, index } = carousel;
+  // いま見ている 1 枚。編集に切り替えるとカルーセルは DOM ごと外れるので、戻ったらここへ戻す
+  const shown = useRef(openAt);
+
   useLayoutEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (meal && !dialog.open) {
-      dialog.showModal();
-      goTo(openAt, "instant"); // 開いた瞬間は送らない。タップした 1 枚がそこにある
+    if (!isOpen) {
+      if (dialog.open) dialog.close();
+      return;
     }
-    if (!meal && dialog.open) dialog.close();
-  }, [meal, openAt, goTo]);
+    if (!dialog.open) {
+      dialog.showModal();
+      shown.current = openAt; // 開くのはタップした 1 枚から
+    }
+  }, [isOpen, openAt]);
+  // 位置合わせは showModal のあと（閉じた dialog は幅が 0 で、何枚目かを数えられない）。
+  // paint 前（useLayoutEffect）に済ませるので、前の位置のまま 1 フレーム描かれることがない
+  useLayoutEffect(() => {
+    if (isOpen && !editing) goTo(shown.current, "instant");
+  }, [isOpen, editing, goTo]);
+  useEffect(() => {
+    if (!editing) shown.current = index;
+  }, [editing, index]);
 
-  const current = photos[carousel.index];
   return (
     <dialog
       ref={ref}
-      className="lightbox"
-      aria-label={meal ? `${meal.name} の写真` : "写真の拡大表示"}
+      className="sheet sheet--detail"
+      aria-labelledby="mealDetailHeading"
+      closedby="any"
       onClose={onClose}
       onClick={(e) => {
+        // closedby="any" の無い Safari のための背景タップ。中身が dialog を満たしているので、
+        // target が dialog そのものになるのは背景だけ
         if (e.target === ref.current) onClose();
       }}
       onKeyDown={(e) => {
-        // 焦点はボタンにあるので矢印キーは空いている。Esc は dialog が持つ
-        if (e.key === "ArrowRight") carousel.goTo(carousel.index + 1);
-        if (e.key === "ArrowLeft") carousel.goTo(carousel.index - 1);
+        // 焦点はボタンにあるので矢印キーは空いている（編集中は入力欄のもの）。Esc は dialog が持つ
+        if (editing) return;
+        if (e.key === "ArrowRight") goTo(index + 1);
+        if (e.key === "ArrowLeft") goTo(index - 1);
       }}
     >
-      {meal && current && (
-        <div className="stack stack--tight">
-          <ul
-            ref={carousel.ref}
-            className="photo-carousel photo-carousel--full"
-            role="list"
-            onScroll={carousel.onScroll}
-          >
-            {photos.map((p, i) => (
-              <li key={p.id}>
-                <img
-                  src={mealPhotoUrl(spaceId, meal.id, p.id)}
-                  alt={`${meal.name} の写真 ${i + 1}`}
-                  width={p.width}
-                  height={p.height}
-                  loading={i === openAt ? "eager" : "lazy"}
-                  decoding="async"
-                />
-              </li>
-            ))}
-          </ul>
-          {/* なにを・いつ食べたか。グリッドから開くと料理名はここにしか無い（requirements 13） */}
-          <p className="lightbox__caption">
-            <strong>{meal.name}</strong>{" "}
-            <span className="lightbox__caption-date">{formatEatenOn(meal.eatenOn)}</span>
-          </p>
-          {photos.length > 1 && (
-            <CarouselNav index={carousel.index} count={photos.length} onGoTo={carousel.goTo} />
-          )}
-          <div className="row row--between">
-            <button
-              type="button"
-              className="btn btn--danger btn--small"
-              onClick={() => onDelete(meal, current)}
-            >
-              写真を削除
-            </button>
+      {meal && (
+        <div className="detail">
+          <div className="sheet__head">
+            <h2 id="mealDetailHeading">{meal.name}</h2>
             <button type="button" className="btn btn--small" onClick={onClose}>
               閉じる
             </button>
           </div>
+          {editing ? (
+            <div className="sheet__body">
+              <MealEditForm
+                spaceId={spaceId}
+                meal={meal}
+                idPrefix={`detail-${meal.id}-`}
+                onCancelEdit={onCancelEdit}
+                onSaved={onSaved}
+                onPhotosChange={onPhotosChange}
+                onError={onError}
+              />
+            </div>
+          ) : (
+            <>
+              <PhotoStage spaceId={spaceId} meal={meal} carousel={carousel} />
+              <div className="sheet__body stack stack--tight">
+                <div className="row">
+                  <span className="muted">{formatEatenOn(meal.eatenOn)}</span>
+                  {meal.mealType && <span className="badge">{MEAL_TYPE_LABEL[meal.mealType]}</span>}
+                </div>
+                {meal.tags.length > 0 && (
+                  <div className="row">
+                    {meal.tags.map((t) => (
+                      <span key={t.id} className="badge">
+                        {t.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <MealLinkList spaceId={spaceId} meal={meal} />
+                {meal.recipeMemo && (
+                  <details>
+                    <summary>作り方メモ</summary>
+                    <p className="pre-wrap">{meal.recipeMemo}</p>
+                  </details>
+                )}
+                {meal.note && <p className="pre-wrap">{meal.note}</p>}
+                <p className="muted">{meal.createdByName} が記録</p>
+                <div className="row row--between">
+                  <button
+                    type="button"
+                    className="btn btn--small"
+                    aria-pressed={meal.mataTabetai}
+                    onClick={() => onToggle(meal)}
+                  >
+                    <span aria-hidden="true">{meal.mataTabetai ? "♥" : "♡"}</span> またたべたい
+                    <span className="visually-hidden">（{meal.name}）</span>
+                  </button>
+                  <div className="row">
+                    <button type="button" className="btn btn--small" onClick={onEdit}>
+                      編集<span className="visually-hidden">（{meal.name}）</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--danger btn--small"
+                      onClick={() => onRemove(meal)}
+                    >
+                      削除<span className="visually-hidden">（{meal.name}）</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </dialog>

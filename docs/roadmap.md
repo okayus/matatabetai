@@ -33,6 +33,7 @@
 - [x] 投稿フォームのダイアログ化（[requirements](requirements.md) 14）— 2026-09-05 追加
 - [x] 写真ファーストのトップページ（[requirements](requirements.md) 15: 既定は写真だけ・検索 + 投稿済み写真）— [ADR-009](adr/009-photo-first-home.md)
 - [x] 記録ボタンを右下に固定（[ADR-009](adr/009-photo-first-home.md) §5 改訂）+ レシピ・お店の URL を複数に（[requirements](requirements.md) 3 / 5）— [ADR-010](adr/010-multiple-links.md)。2026-09-06 追加
+- [x] 写真から開く記録の詳細（[requirements](requirements.md) 16: 送りの操作を写真の上に・そこから編集）— [ADR-011](adr/011-meal-detail.md)。2026-09-06 追加
 
 ## Phase 4 — 公開前の堅牢化
 

@@ -287,10 +287,14 @@
     gap: var(--space-1);
     inline-size: 5.5rem;
   }
-  /* width/height 属性は本体の縦横比。タイルは正方形に切り抜く */
+  /* width/height 属性は本体の縦横比。タイルは正方形に切り抜く。
+     block-size: auto を書くのは、height 属性（presentational hint）が残っていると
+     縦横が両方とも決まってしまい aspect-ratio が効かないため（編集フォームのタイルが
+     写真の実寸ぶん縦に伸びていた） */
   .photo-pending img {
     display: block;
     inline-size: 100%;
+    block-size: auto;
     aspect-ratio: 1;
     object-fit: cover;
     border: 1px solid var(--color-border);
@@ -657,7 +661,8 @@
     background: rgb(0 0 0 / 0.5);
   }
   /* 中身で dialog を満たす: 余白のタップが「背景のタップ」（= 閉じる）に化けないように */
-  .sheet > form {
+  .sheet > form,
+  .sheet > .detail {
     min-block-size: 100%;
   }
   .sheet__head {
@@ -684,42 +689,108 @@
       border-radius: var(--radius);
     }
   }
-  .lightbox {
-    max-inline-size: min(96vw, 60rem);
-    padding: 0;
-    border: none;
-    background: transparent;
+  /* 記録の詳細（requirements 16 / ADR-011）。記録フォームと同じシートの作りで、広い画面だけ
+     少し広げる — 写真を見る場なので 40rem では窮屈 */
+  @media (min-width: 40rem) {
+    .sheet--detail {
+      inline-size: min(100% - 2rem, 46rem);
+    }
   }
-  .lightbox::backdrop {
-    background: rgb(0 0 0 / 0.8);
+  /* 写真の舞台。暗い地の上に 1 枚を丸ごと（contain）置き、送る操作をその上に重ねる。
+     高さを決め打つのは、縦横の混ざった写真を送っても舞台が伸び縮みしないため
+     （下の料理名とボタンが動くと、読めないし押し損ねる） */
+  .photo-stage {
+    position: relative;
+    background: #1b1613;
   }
-  /* 拡大した中の送り。1 枚を丸ごと見る場なので切り抜かない */
-  .photo-carousel--full > li {
+  .photo-carousel--stage > li {
     display: flex;
     align-items: center;
     justify-content: center;
+    block-size: min(55dvh, 26rem);
   }
-  .lightbox img {
+  .photo-stage img {
     display: block;
     max-inline-size: 100%;
-    max-block-size: 80dvh;
+    max-block-size: 100%;
     inline-size: auto;
     block-size: auto;
-    margin-inline: auto;
-    border-radius: var(--radius);
+    object-fit: contain;
   }
-  /* 拡大表示の背後は明暗どちらでも暗い。札だけは白で置く（ボタンは surface を持っている） */
-  .lightbox .carousel-count {
+  /* ← → は写真の上に常に出す（ADR-011 §2）。タップして初めて出る操作は、出ていないのと同じ。
+     背後は明暗どちらでも暗いので、重ねるものは白と黒の座布団で固定する */
+  .photo-stage__nav {
+    position: absolute;
+    inset-block-start: 50%;
+    translate: 0 -50%;
+    display: grid;
+    place-items: center;
+    inline-size: var(--tap);
+    block-size: var(--tap);
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 0.45);
     color: #ffffff;
+    cursor: pointer;
   }
-  /* なにを・いつ食べたか。グリッドから開いたとき、料理名はここにしか無い */
-  .lightbox__caption {
+  .photo-stage__nav--prev {
+    inset-inline-start: var(--space-2);
+  }
+  .photo-stage__nav--next {
+    inset-inline-end: var(--space-2);
+  }
+  /* 端。押しても動かないことを見せるが、focus は残す（disabled にしない — CarouselNav と同じ） */
+  .photo-stage__nav[aria-disabled="true"] {
+    opacity: 0.35;
+  }
+  .photo-stage__chevron {
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+  }
+  .photo-stage__count {
+    position: absolute;
+    inset-block-start: var(--space-2);
+    inset-inline-end: var(--space-2);
+    padding: 2px var(--space-2);
+    border-radius: 999px;
+    background: rgb(0 0 0 / 0.45);
     color: #ffffff;
-    text-align: center;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums; /* 桁が変わっても札の幅が動かない */
   }
-  .lightbox__caption-date {
-    color: rgb(255 255 255 / 0.75);
-    font-size: 0.875rem;
+  /* 行き先の点。見た目は 0.5rem でも、押せる範囲は指の幅（padding で 1.5rem 角）にする */
+  .photo-stage__dots {
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline: 0;
+    display: flex;
+    justify-content: center;
+  }
+  .photo-stage__dot {
+    padding: var(--space-2);
+    border: none;
+    background: none;
+    line-height: 0;
+    cursor: pointer;
+  }
+  .photo-stage__dot::before {
+    content: "";
+    display: block;
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.5);
+    box-shadow: 0 0 3px rgb(0 0 0 / 0.7);
+  }
+  .photo-stage__dot[aria-current="true"]::before {
+    background: #ffffff;
+  }
+  /* 編集で写真を全部外したとき（詳細は写真からしか開かないので、開いた時点では必ず 1 枚以上ある） */
+  .detail__nophoto {
+    padding: var(--space-3);
+    border-block-end: 1px solid var(--color-border);
+    color: var(--color-muted);
   }
 }
 
