@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import type { MealCook } from "../api";
+import { toggleCook } from "../lib/meal-cooks";
 import {
   MAX_LINKS_PER_MEAL,
   MEAL_TYPES,
@@ -19,12 +21,15 @@ import {
 export function MealFields({
   idPrefix,
   form,
+  cookOptions,
   onChange,
   afterName,
   photos,
 }: {
   idPrefix: string;
   form: MealFormState;
+  // 作った人の札に出す人（スペースのメンバー + 編集ならその記録で作った人 — ADR-012 §4）
+  cookOptions: MealCook[];
   onChange: <K extends keyof MealFormState>(key: K, value: MealFormState[K]) => void;
   afterName?: ReactNode;
   photos?: ReactNode;
@@ -76,6 +81,12 @@ export function MealFields({
           </select>
         </div>
       </div>
+      <CookPicker
+        id={id("Cooks")}
+        options={cookOptions}
+        selected={form.cookUserIds}
+        onChange={(next) => onChange("cookUserIds", next)}
+      />
       <div className="field">
         <label htmlFor={id("Tags")}>タグ</label>
         <span id={id("TagsHint")} className="hint">
@@ -141,6 +152,48 @@ export function MealFields({
         />
       </div>
     </>
+  );
+}
+
+// 作った人（requirements 17、ADR-012 §6）。スペースのメンバーの札を押して選ぶ（複数可）。
+// 初期値は「誰も選ばれていない」= 作った人は記録しない — 自分を先に押しておくと、外食や
+// 家族が作った回で外し忘れたぶんが「自分が作った」として残る（ADR-012 §6）。
+// 見出しは <label> ではなく group の名前（中の入力が 1 つではない — UrlFields と同じ形）
+function CookPicker({
+  id,
+  options,
+  selected,
+  onChange,
+}: {
+  id: string;
+  options: MealCook[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  // メンバーを読めていない間は出さない（空の見出しだけが残らないように）
+  if (options.length === 0) return null;
+  return (
+    <div className="field" role="group" aria-labelledby={`${id}Label`} aria-describedby={`${id}Hint`}>
+      <span id={`${id}Label`} className="field__label">
+        作った人
+      </span>
+      <span id={`${id}Hint`} className="hint">
+        任意です。作った人を押してください（複数えらべます）
+      </span>
+      <div className="chips">
+        {options.map((cook) => (
+          <button
+            key={cook.userId}
+            type="button"
+            className="chip"
+            aria-pressed={selected.includes(cook.userId)}
+            onClick={() => onChange(toggleCook(selected, cook.userId))}
+          >
+            {cook.displayName}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

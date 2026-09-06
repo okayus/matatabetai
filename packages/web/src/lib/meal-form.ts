@@ -13,6 +13,9 @@ export type MealFormState = {
   shopUrls: string[];
   recipeMemo: string;
   note: string;
+  // 作った人（requirements 17、ADR-012）。札のトグルで選ぶ user id の並び。
+  // 空 = 「作った人は記録していない」で、初期値も空（自分を既定で選ばない — ADR-012 §6）
+  cookUserIds: string[];
 };
 
 export const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const satisfies readonly MealType[];
@@ -44,6 +47,7 @@ export function emptyMealForm(today: string): MealFormState {
     shopUrls: [""],
     recipeMemo: "",
     note: "",
+    cookUserIds: [],
   };
 }
 
@@ -81,7 +85,8 @@ export function formatTagInput(tags: readonly MealTag[]): string {
 
 // サジェストを選んだときに引き継ぐのは 料理名 / リンク 2 種・作り方メモ / タグ（requirements 8）。
 // 3 項目は料理の属性なので引き継ぎ、食べた日・タイミングは今回の食事のもの、
-// メモはその回のエピソードなので引き継がない（ADR-007 §1）
+// メモはその回のエピソードなので引き継がない（ADR-007 §1）。
+// 作った人も引き継がない — 同じ料理でも作る人は回ごとに変わる（ADR-012 §5）
 export function applySuggestion(form: MealFormState, suggestion: MealSuggestion): MealFormState {
   return {
     ...form,
@@ -105,6 +110,7 @@ export function mealFormFrom(meal: Meal): MealFormState {
     shopUrls: urlRows(meal.links.flatMap((l) => (l.kind === "shop" ? [l.url] : []))),
     recipeMemo: meal.recipeMemo ?? "",
     note: meal.note ?? "",
+    cookUserIds: meal.cooks.map((c) => c.userId),
   };
 }
 
@@ -123,5 +129,6 @@ export function toMealContentBody(form: MealFormState): MealContentBody {
     recipeMemo: form.recipeMemo.trim() || null,
     note: form.note.trim() || null,
     tags: parseTagInput(form.tags),
+    cookUserIds: form.cookUserIds,
   };
 }

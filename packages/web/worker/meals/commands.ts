@@ -26,11 +26,11 @@ import {
   savedLinksOfMeal,
 } from "./links";
 import { mealExists, photoKeysOfMeal } from "./photos";
-import type { MealTagSummary } from "./queries";
+import { loadMealCooks, type MealCookSummary, type MealTagSummary } from "./queries";
 
-// タグの upsert → meal → meal_tags → リンクの pending 行 を 1 つの batch（原子的）で書く。
-// tag id の解決は INSERT … SELECT で SQL 側に閉じ、同名タグの同時投稿は ON CONFLICT DO NOTHING が
-// 吸収する。プレビューの取得そのものは応答後（waitUntil）で、ここでは行を立てるだけ（ADR-007 §4）
+// タグの upsert → meal → meal_tags → meal_cooks → リンクの pending 行 を 1 つの batch（原子的）で書く。
+// tag id の解決と作った人のメンバー確認は INSERT … SELECT で SQL 側に閉じ、同名タグの同時投稿は
+// ON CONFLICT DO NOTHING が吸収する。プレビューの取得そのものは応答後（waitUntil）で、ここでは行を立てるだけ（ADR-007 §4）
 export async function createMeal(
   d1: D1Database,
   spaceId: SpaceId,
@@ -40,6 +40,7 @@ export async function createMeal(
 ): Promise<{
   id: string;
   tags: MealTagSummary[];
+  cooks: MealCookSummary[];
   links: MealLink[];
   previewTargets: LinkPreviewTarget[];
 }> {
@@ -71,11 +72,17 @@ export async function createMeal(
         now,
       ),
     ...mealTagStatements(d1, spaceId, id, tagNames),
+    ...mealCookStatements(d1, spaceId, id, input.cookUserIds),
     ...links.statements,
+  ]);
+  const [resolvedTags, cooks] = await Promise.all([
+    resolveTags(d1, spaceId, tagNames),
+    resolveCooks(d1, id),
   ]);
   return {
     id,
-    tags: await resolveTags(d1, spaceId, tagNames),
+    tags: resolvedTags,
+    cooks,
     links: links.rows.map(pendingMealLink),
     previewTargets: fetchTargets(links.rows),
   };
@@ -112,6 +119,43 @@ function mealTagStatements(
       )
       .bind(mealId, spaceId, normalizeName(name)),
   );
+}
+
+// 作った人を足す文（ADR-012 §3）。「スペースのメンバーだけが作った人になれる」を SQL 側で保証する
+// — 他人の user id を送っても SELECT が 0 行なので、行は増えない（tag id の解決と同じ手）。
+// 選び直しただけの編集は既にある行に当たるので ON CONFLICT DO NOTHING
+function mealCookStatements(
+  d1: D1Database,
+  spaceId: SpaceId,
+  mealId: string,
+  userIds: readonly string[],
+): D1PreparedStatement[] {
+  return userIds.map((userId) =>
+    d1
+      .prepare(
+        "INSERT INTO meal_cooks (meal_id, user_id) SELECT ?, user_id FROM space_members WHERE space_id = ? AND user_id = ? ON CONFLICT (meal_id, user_id) DO NOTHING",
+      )
+      .bind(mealId, spaceId, userId),
+  );
+}
+
+// 外された人だけ消す。meal_tags のような張り替え（全部消して入れ直す）にしないのは、
+// スペースを抜けた人の行を戻せなくなるから — INSERT はメンバーしか通さないので、
+// 消してしまうと「◯◯ が作った」が誰かの無関係な編集で黙って消える（ADR-012 §4）
+function removedCookStatements(
+  d1: D1Database,
+  mealId: string,
+  keepUserIds: readonly string[],
+): D1PreparedStatement[] {
+  if (keepUserIds.length === 0) {
+    return [d1.prepare("DELETE FROM meal_cooks WHERE meal_id = ?").bind(mealId)];
+  }
+  const placeholders = keepUserIds.map(() => "?").join(", ");
+  return [
+    d1
+      .prepare(`DELETE FROM meal_cooks WHERE meal_id = ? AND user_id NOT IN (${placeholders})`)
+      .bind(mealId, ...keepUserIds),
+  ];
 }
 
 // 編集は内容の全置き換え（ADR-008 §1）。作成と同じ入力を受け、同じ 1 つの batch で
@@ -162,6 +206,8 @@ export async function updateMeal(
     // meal_tags は結合行だけで固有の情報を持たないので、差分を取らず張り替える（ADR-008 §3）
     d1.prepare("DELETE FROM meal_tags WHERE meal_id = ?").bind(mealId),
     ...mealTagStatements(d1, spaceId, mealId, tagNames),
+    ...removedCookStatements(d1, mealId, input.cookUserIds),
+    ...mealCookStatements(d1, spaceId, mealId, input.cookUserIds),
     ...removedLinkStatements(d1, mealId, plan.removedIds),
     ...repositionedLinkStatements(d1, mealId, plan.repositioned),
     ...added.statements,
@@ -183,6 +229,11 @@ async function resolveTags(
     .where(and(eq(tags.spaceId, spaceId), inArray(tags.nameNormalized, keys)));
   const byKey = new Map(rows.map((r) => [r.nameNormalized, { id: r.id, name: r.name }]));
   return keys.flatMap((k) => byKey.get(k) ?? []);
+}
+
+// 書けた行をそのまま返す（メンバーでない user id は落ちているので、応答が保存の真実）
+async function resolveCooks(d1: D1Database, mealId: string): Promise<MealCookSummary[]> {
+  return (await loadMealCooks(drizzle(d1), [mealId])).get(mealId) ?? [];
 }
 
 export async function setMataTabetai(

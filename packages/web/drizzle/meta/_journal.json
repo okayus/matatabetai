@@ -50,6 +50,13 @@
       "when": 1788685310048,
       "tag": "0006_meal_links",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788706476289,
+      "tag": "0007_meal_cooks",
+      "breakpoints": true
     }
   ]
 }

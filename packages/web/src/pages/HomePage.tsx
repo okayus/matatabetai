@@ -12,11 +12,13 @@ import {
   describeFailure,
   listMeals,
   listMealSuggestions,
+  listSpaceMembers,
   listSpaceTags,
   mealPhotoUrl,
   uploadMealPhoto,
   type Me,
   type Meal,
+  type MealCook,
   type MealPhoto,
   type MealSuggestion,
   type MealTag,
@@ -28,6 +30,7 @@ import { MealList } from "../components/MealList";
 import { TagFilter } from "../components/TagFilter";
 import { formatEatenOn, formatShortDate, todayLocalDate } from "../format";
 import { preparePhoto, type PreparedPhoto } from "../lib/image-prep";
+import { cookOptionsFor } from "../lib/meal-cooks";
 import {
   EMPTY_MEAL_FILTER,
   isEmptyMealFilter,
@@ -63,6 +66,7 @@ export function HomePage({ me }: { me: Me }) {
     <MealsSection
       key={primary.id}
       space={primary}
+      meId={me.id}
       filter={filter}
       // 札の切り替え・テキストの確定は履歴を汚さない（「戻る」は前のページへ）
       onFilterChange={(next) => navigate(`/${mealFilterSearch(next)}`, { replace: true })}
@@ -72,16 +76,21 @@ export function HomePage({ me }: { me: Me }) {
 
 function MealsSection({
   space,
+  meId,
   filter,
   onFilterChange,
 }: {
   space: SpaceSummary;
+  // 「作った人」の札で自分を先頭に置くため（ADR-012 §6）
+  meId: string;
   filter: MealFilter;
   onFilterChange: (next: MealFilter) => void;
 }) {
   const [meals, setMeals] = useState<Meal[] | null>(null);
   // 絞り込みの語彙（よく使う順）。記録すると増えるので、送れたら読み直す
   const [tagList, setTagList] = useState<MealTag[]>([]);
+  // 「作った人」の札の語彙（requirements 17）。招待で増えるが、開いている間は動かない
+  const [cookOptions, setCookOptions] = useState<MealCook[]>([]);
   // タイムラインの見せ方（requirements 13）。既定は写真だけの壁（requirements 15）で、
   // 料理名・タグ・メモまで読みたければ くわしく に切り替える
   const [view, setView] = useState<"list" | "grid">("grid");
@@ -96,6 +105,16 @@ function MealsSection({
   useEffect(() => {
     void loadTags();
   }, [loadTags]);
+
+  useEffect(() => {
+    let live = true;
+    void listSpaceMembers(space.id).then((r) => {
+      if (live && r.isOk()) setCookOptions(cookOptionsFor(r.value, meId));
+    });
+    return () => {
+      live = false;
+    };
+  }, [space.id, meId]);
 
   // 絞り込みを続けて切り替えたときに、古い応答で上書きしない
   useEffect(() => {
@@ -166,6 +185,7 @@ function MealsSection({
           <MealList
             spaceId={space.id}
             meals={meals}
+            cookOptions={cookOptions}
             view={view}
             onMealsChange={(update) => setMeals((prev) => update(prev ?? []))}
             onError={setError}
@@ -174,6 +194,7 @@ function MealsSection({
       </section>
       <MealFormDialog
         spaceId={space.id}
+        cookOptions={cookOptions}
         open={composing}
         onClose={() => setComposing(false)}
         onCreated={onCreated}
@@ -289,11 +310,13 @@ type PendingPhoto = { key: string; prepared: PreparedPhoto; previewUrl: string }
 // 開くたびに読み直すので、記録の増減に追従させる再読込の配線が要らない（modal の間、記録は動かない）
 function MealFormDialog({
   spaceId,
+  cookOptions,
   open,
   onClose,
   onCreated,
 }: {
   spaceId: string;
+  cookOptions: MealCook[];
   open: boolean;
   onClose: () => void;
   onCreated: (m: Meal) => void;
@@ -408,6 +431,7 @@ function MealFormDialog({
           <MealFields
             idPrefix="newMeal"
             form={form}
+            cookOptions={cookOptions}
             onChange={set}
             afterName={
               <>

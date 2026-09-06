@@ -46,6 +46,9 @@ export type MealLinks = {
   recipeMemo: string | null;
 };
 export type MealTag = { id: string; name: string };
+// 作った人（requirements 17、ADR-012）。記録した人（createdBy / createdByName）とは別で、
+// 0 人は「作った人を記録していない」（外食など）。スペースを抜けた人も記録には残る
+export type MealCook = { userId: string; displayName: string };
 // URL プレビューは投稿時のスナップショット（ADR-007 §3）。取得中・失敗はカードにせず
 // プレーンリンクのまま出す（3 状態のうち ok だけが見た目を変える — ADR-007 §5）
 export type LinkPreviewKind = "recipe" | "shop";
@@ -83,6 +86,7 @@ export type Meal = {
   note: string | null;
   mataTabetai: boolean;
   tags: MealTag[];
+  cooks: MealCook[];
   photos: MealPhoto[];
   links: MealLink[];
   createdBy: string;
@@ -115,6 +119,8 @@ export type MealContentBody = MealLinks & {
   mealType: MealType | null;
   note: string | null;
   tags: string[];
+  // 作った人。メンバーでない user id はサーバーが落とすので、応答の cooks が保存の真実
+  cookUserIds: string[];
 };
 
 export type ApiFailure =
@@ -204,6 +210,8 @@ export const deleteCredential = (id: string) =>
 export const listSpaces = () => api<SpaceSummary[]>("/api/spaces");
 export const createSpace = (name: string) => post<{ id: string; name: string }>("/api/spaces", { name });
 export const getSpace = (spaceId: string) => api<SpaceDetail>(`/api/spaces/${spaceId}`);
+// スペースのメンバー（作った人の札の語彙）。所属していれば誰でも読める
+export const listSpaceMembers = (spaceId: string) => api<Member[]>(`/api/spaces/${spaceId}/members`);
 export const renameSpace = (spaceId: string, name: string) =>
   patch<{ id: string; name: string }>(`/api/spaces/${spaceId}`, { name });
 export const removeMember = (spaceId: string, userId: string) =>
