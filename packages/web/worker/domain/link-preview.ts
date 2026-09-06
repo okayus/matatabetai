@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { MealLinks } from "./meal";
 
-// URL プレビュー（ADR-007 §3-6）のドメイン。取得そのもの（fetch / HTMLRewriter）は境界に置き、
-// ここには「拾った候補 → 保存する値」「行 → 表示する状態」の純粋な変換だけを置く。
+// リンクとその URL プレビュー（ADR-007 §3-6、複数化は ADR-010）のドメイン。
+// 取得そのもの（fetch / HTMLRewriter）は境界に置き、ここには「拾った候補 → 保存する値」
+// 「行 → 表示する状態」「保存済み + 入力 → 足し引きの計画」の純粋な変換だけを置く。
 // HTMLRewriter は workerd の API で vitest（Node）には無いので、意味の検査はこの層で固定する。
 
 export const LINK_PREVIEW_KINDS = ["recipe", "shop"] as const;
@@ -10,73 +11,104 @@ export type LinkPreviewKind = (typeof LINK_PREVIEW_KINDS)[number];
 export const LinkPreviewKind = z.enum(LINK_PREVIEW_KINDS);
 
 // 取得中 / 成功 / 失敗 のいずれか。pending と failed は見た目が同じ（プレーンリンク）だが、
-// 「まだ」と「もう無理」は別の事実なので畳まない（ADR-007 §5）
+// 「まだ」と「もう無理」は別の事実なので畳まない（ADR-007 §5）。
+// kind と URL はリンクそのものが持つので、この DU はスナップショットの状態だけを表す
 export type LinkPreview =
-  | { kind: LinkPreviewKind; status: "pending" }
+  | { status: "pending" }
   | {
-      kind: LinkPreviewKind;
       status: "ok";
       title: string;
       description: string | null;
       siteName: string | null;
       hasImage: boolean;
     }
-  | { kind: LinkPreviewKind; status: "failed" };
+  | { status: "failed" };
 
-export type LinkPreviewTarget = { kind: LinkPreviewKind; url: string };
+// 貼られた URL 1 本。id は行の id（配信 URL と R2 キーに使う）で、行は不変（ADR-010 §1）
+export type MealLink = {
+  id: string;
+  kind: LinkPreviewKind;
+  url: string;
+  preview: LinkPreview;
+};
 
-// プレビューを取りに行く先。作り方メモは URL ではないので対象外（MealLinks の 3 項目のうち 2 つ）
-export function linkPreviewTargets(links: MealLinks): LinkPreviewTarget[] {
-  const targets: LinkPreviewTarget[] = [];
-  if (links.recipeUrl !== null) targets.push({ kind: "recipe", url: links.recipeUrl });
-  if (links.shopUrl !== null) targets.push({ kind: "shop", url: links.shopUrl });
-  return targets;
+// これから立てる行。id は境界（コマンド）が採るので、純粋なこちらには無い
+export type PlannedLink = { kind: LinkPreviewKind; url: string; position: number };
+
+// 立てたばかりの行（id を採ったあと）。取りに行く先でもあり、投稿の応答に載せる姿でもある
+export type NewLink = PlannedLink & { id: string };
+
+// 取りに行く先（立てた行の id 付き）
+export type LinkPreviewTarget = { id: string; url: string };
+
+// 立てたばかりの行 → 表示するリンク。取得はこれから走るので、どれも「取得中」
+export function pendingMealLink({ id, kind, url }: NewLink): MealLink {
+  return { id, kind, url, preview: { status: "pending" } };
+}
+
+// 入力の URL 欄 → 立てるべき行。レシピ → お店・商品 の順に、それぞれ入力の並びで番号を振る。
+// 作り方メモは URL ではないので対象外（MealLinks の 3 項目のうち 2 つ）
+export function plannedLinks(links: MealLinks): PlannedLink[] {
+  return LINK_PREVIEW_KINDS.flatMap((kind) =>
+    urlsOfKind(links, kind).map((url, position) => ({ kind, url, position })),
+  );
+}
+
+export function urlsOfKind(links: MealLinks, kind: LinkPreviewKind): readonly string[] {
+  return kind === "recipe" ? links.recipeUrls : links.shopUrls;
 }
 
 // R2 キーは拡張子なし（photoKeys と同じ流儀 — content type は object の httpMetadata が持つ）。
 // spaceId / mealId 接頭辞で 1 家族・1 投稿ぶんを list / 削除できる（ADR-007 §4）。
-// 末尾の imageId は取得ごとに固有（ADR-008 §6）— 編集で同じ (meal, kind) の取得が 2 本走ったとき、
-// キーが同じだと負けたジョブの補償削除が勝ったジョブの画像を消す。配信も削除も行の
-// image_r2_key を読むので、キーの形はここだけの話で済む
-export function linkPreviewImageKey(
-  spaceId: string,
-  mealId: string,
-  kind: LinkPreviewKind,
-  imageId: string,
-): string {
-  return `ogp/${spaceId}/${mealId}/${kind}/${imageId}`;
+// 末尾は行の id — 行は不変（URL が変われば別の行）で 1 行につき取得は 1 回しか走らないので、
+// ADR-008 §6 が付けていた取得ごとのランダム id は要らない（ADR-010 §1）。
+// 配信も削除も行の image_r2_key を読むので、キーの形はここだけの話で済む
+export function linkPreviewImageKey(spaceId: string, mealId: string, linkId: string): string {
+  return `ogp/${spaceId}/${mealId}/${linkId}`;
 }
 
-// 保存済みのプレビュー行のうち、編集で「同じ URL か」を判定するのに要る分
-export type SavedLinkPreview = { kind: LinkPreviewKind; url: string; imageR2Key: string | null };
-
-// 編集で保存済みのプレビューをどうするか（ADR-008 §5）。URL が変わっていなければ
-// スナップショットは投稿時点の姿のまま残し、変わった / 消えたときだけ捨てて取り直す
-export type LinkPreviewPlan = {
-  // 消す行（URL が変わった / URL 自体が消えた）
-  staleKinds: LinkPreviewKind[];
-  // 消す R2 object（捨てる行が画像を持っていた分だけ）
-  staleImageKeys: string[];
-  // 立て直す pending 行 = これから取りに行く先
-  targets: LinkPreviewTarget[];
+// 保存済みの行のうち、編集の足し引きを決めるのに要る分
+export type SavedLink = {
+  id: string;
+  kind: LinkPreviewKind;
+  url: string;
+  position: number;
+  imageR2Key: string | null;
 };
 
-export function planLinkPreviews(
-  saved: readonly SavedLinkPreview[],
-  links: MealLinks,
-): LinkPreviewPlan {
-  const plan: LinkPreviewPlan = { staleKinds: [], staleImageKeys: [], targets: [] };
-  const next = new Map(linkPreviewTargets(links).map((t) => [t.kind, t.url]));
-  for (const kind of LINK_PREVIEW_KINDS) {
-    const row = saved.find((r) => r.kind === kind) ?? null;
-    const url = next.get(kind) ?? null;
-    // 同じ URL は触らない（カードは投稿時点の姿のまま — ADR-007 §3）
-    if (row !== null && row.url === url) continue;
-    if (row !== null) {
-      plan.staleKinds.push(kind);
-      if (row.imageR2Key !== null) plan.staleImageKeys.push(row.imageR2Key);
+// 編集で保存済みのリンクをどうするか（ADR-008 §5 を URL 単位に読み替え — ADR-010 §4）。
+// 同じ (kind, url) の行はスナップショットを投稿時点の姿のまま残し、消えた URL だけ捨てて、
+// 増えた URL だけ取りに行く
+export type LinkPlan = {
+  // URL は同じで並びだけ変わった行（カードはそのまま、position だけ書き直す）
+  repositioned: { id: string; position: number }[];
+  // 消す行（入力から URL が消えた）
+  removedIds: string[];
+  // 消す R2 object（捨てる行が画像を持っていた分だけ）
+  staleImageKeys: string[];
+  // 立てる pending 行 = これから取りに行く先（id は境界で採る）
+  added: PlannedLink[];
+};
+
+export function planLinks(saved: readonly SavedLink[], links: MealLinks): LinkPlan {
+  const plan: LinkPlan = { repositioned: [], removedIds: [], staleImageKeys: [], added: [] };
+  // 同じ (kind, url) の行が複数あることは無い（入力は uniqueUrls で畳んである）
+  const remaining = new Map(saved.map((row) => [`${row.kind}\n${row.url}`, row]));
+  for (const planned of plannedLinks(links)) {
+    const row = remaining.get(`${planned.kind}\n${planned.url}`);
+    if (row === undefined) {
+      plan.added.push(planned);
+      continue;
     }
-    if (url !== null) plan.targets.push({ kind, url });
+    remaining.delete(`${planned.kind}\n${planned.url}`);
+    if (row.position !== planned.position) {
+      plan.repositioned.push({ id: row.id, position: planned.position });
+    }
+  }
+  // 入力に残らなかった行が捨てる分
+  for (const row of remaining.values()) {
+    plan.removedIds.push(row.id);
+    if (row.imageR2Key !== null) plan.staleImageKeys.push(row.imageR2Key);
   }
   return plan;
 }
@@ -148,8 +180,11 @@ export function toSnapshot(
   };
 }
 
-export type LinkPreviewRow = {
+export type MealLinkRow = {
+  id: string;
   kind: LinkPreviewKind;
+  url: string;
+  position: number;
   status: "pending" | "ok" | "failed";
   title: string | null;
   description: string | null;
@@ -157,14 +192,17 @@ export type LinkPreviewRow = {
   imageR2Key: string | null;
 };
 
-// 行 → 表示する状態。列は「status と title が食い違う」形（取得の途中で死んだ残骸）を
+// 行 → 表示するリンク。列は「status と title が食い違う」形（取得の途中で死んだ残骸）を
 // 表現できてしまうので、DU に持ち上げるここで failed に倒して不正な状態を外に出さない
-export function toLinkPreview(row: LinkPreviewRow): LinkPreview {
-  const { kind } = row;
-  if (row.status === "pending") return { kind, status: "pending" };
+export function toMealLink(row: MealLinkRow): MealLink {
+  const { id, kind, url } = row;
+  return { id, kind, url, preview: toPreview(row) };
+}
+
+function toPreview(row: MealLinkRow): LinkPreview {
+  if (row.status === "pending") return { status: "pending" };
   if (row.status === "ok" && row.title !== null) {
     return {
-      kind,
       status: "ok",
       title: row.title,
       description: row.description,
@@ -172,13 +210,15 @@ export function toLinkPreview(row: LinkPreviewRow): LinkPreview {
       hasImage: row.imageR2Key !== null,
     };
   }
-  return { kind, status: "failed" };
+  return { status: "failed" };
 }
 
-// 一覧では レシピ → お店・商品 の順に出す（フォームの並びと同じ）。
-// kind の文字列順に頼らず、この配列を並びの正典にする
-export function sortByKind<T extends { kind: LinkPreviewKind }>(items: T[]): T[] {
+// 一覧では レシピ → お店・商品 の順、その中は position 順に出す（フォームの並びと同じ）。
+// kind の文字列順に頼らず、LINK_PREVIEW_KINDS を並びの正典にする
+export function sortLinks<T extends { kind: LinkPreviewKind; position: number }>(items: T[]): T[] {
   return items.sort(
-    (a, b) => LINK_PREVIEW_KINDS.indexOf(a.kind) - LINK_PREVIEW_KINDS.indexOf(b.kind),
+    (a, b) =>
+      LINK_PREVIEW_KINDS.indexOf(a.kind) - LINK_PREVIEW_KINDS.indexOf(b.kind) ||
+      a.position - b.position,
   );
 }

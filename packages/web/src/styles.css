@@ -152,6 +152,10 @@
   .row--between {
     justify-content: space-between;
   }
+  /* URL 欄の 1 行（入力 + 外す）。折り返すと「外す」だけが次の行に落ちてどの欄のものか分からない */
+  .row--nowrap {
+    flex-wrap: nowrap;
+  }
   .card {
     padding: var(--space-3);
     border: 1px solid var(--color-border);
@@ -165,6 +169,17 @@
   }
   .field--grow {
     flex: 1 1 12rem;
+    /* 入力欄が中身の既定幅（size 属性ぶん）で押し広げないように */
+    min-inline-size: 0;
+  }
+  /* <label> ではない見出し（複数行を束ねる group の名前）。見た目は label と揃える */
+  .field__label {
+    font-weight: 600;
+  }
+  /* URL 欄を 1 行増やすボタン。入力欄と違って幅いっぱいに伸ばさない（副次的な操作なので、
+     文字ぶんの大きさで欄の下に置く） */
+  .field__add {
+    align-self: start;
   }
   .hint {
     color: var(--color-muted);

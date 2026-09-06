@@ -1,6 +1,6 @@
 # 要件（正典）
 
-2026-08-22 時点の要件（3〜5・8 の改訂と 10 の追加は 2026-09-03 — [ADR-007](adr/007-recipe-links-ogp.md)、11〜13 の追加は 2026-09-03、11 の詳細は [ADR-008](adr/008-meal-edit.md)、14〜15 の追加は 2026-09-05、15 の詳細は [ADR-009](adr/009-photo-first-home.md)、14 の投稿ボタンの位置は 2026-09-06 改訂）。2026-05 の製品意図（CLAUDE.md「このアプリは何のためにあるか」）を前提に、機能要件を列挙する。変更はこのファイルを更新してから実装する。
+2026-08-22 時点の要件（3〜5・8 の改訂と 10 の追加は 2026-09-03 — [ADR-007](adr/007-recipe-links-ogp.md)、11〜13 の追加は 2026-09-03、11 の詳細は [ADR-008](adr/008-meal-edit.md)、14〜15 の追加は 2026-09-05、15 の詳細は [ADR-009](adr/009-photo-first-home.md)、14 の投稿ボタンの位置と 3 / 5 / 8 / 10 の URL 複数化は 2026-09-06 改訂 — [ADR-010](adr/010-multiple-links.md)）。2026-05 の製品意図（CLAUDE.md「このアプリは何のためにあるか」）を前提に、機能要件を列挙する。変更はこのファイルを更新してから実装する。
 
 ## 一言で
 
@@ -10,14 +10,14 @@
 
 1. **スペースと招待** — スペースにアカウントを招待できる。家族で同じスペースに食べたものを記録する（各ユーザーはスペースを 1 つ作成でき、招待リンクで他のスペースにも参加できる）
 2. **画像アップロード** — 投稿に写真を付けられる（複数可）。写真は家族以外に見えない
-3. **レシピ URL** — 投稿にレシピの URL を載せられる
+3. **レシピ URL** — 投稿にレシピの URL を載せられる（**複数可**。1 品に複数のレシピを参考にすることがある — [ADR-010](adr/010-multiple-links.md)）
 4. **作り方メモ** — 自分のレシピやアレンジを本文で書ける（旧「自作レシピ」。3〜5 は排他ではなく独立の任意 3 項目で、併用できる）
-5. **お店・商品 URL** — 外食した店や買ったものの URL を、レシピ URL とは別枠で載せられる
+5. **お店・商品 URL** — 外食した店や買ったものの URL を、レシピ URL とは別枠で載せられる（**複数可**。URL はレシピと合わせて 1 投稿 6 本まで — [ADR-010](adr/010-multiple-links.md) §2）
 6. **食材タグとタグ検索** — 使った食材をタグとして登録し、タグで検索できる（複数タグは AND）
 7. **集計** — 食べたものを集計できる。当面は**料理名**で集計する（同じ料理でも冷蔵庫の中身で食材が変わるため、食材は集計単位にしない）
-8. **サジェスト** — 投稿時に最近食べたものがサジェストされ、タグで絞り込める。選ぶと前回の内容（リンク 2 種・作り方メモ / タグ）を引き継いで編集できる
+8. **サジェスト** — 投稿時に最近食べたものがサジェストされ、タグで絞り込める。選ぶと前回の内容（リンク 2 種は本数ぶん全部・作り方メモ / タグ）を引き継いで編集できる
 9. **またたべたい** — 投稿に「またたべたい」をトグルできる（2026-05 の設計より）。一覧・集計で前に出し、次の献立の起点にする
-10. **URL プレビュー** — レシピ／お店・商品の URL は、投稿時に取得して保存したタイトル・画像のカードで表示される（スナップショット: リンク切れでもカードは残る）
+10. **URL プレビュー** — レシピ／お店・商品の URL は、投稿時に取得して保存したタイトル・画像のカードで表示される（スナップショット: リンク切れでもカードは残る）。カードは URL 1 本につき 1 枚
 
 11. **投稿の編集** — 記録した内容をあとから直せる（打ち間違い・あとから足す写真・貼り替える URL）。スペースのメンバーなら誰の記録でも直せ、「記録したのは誰か」と記録した日時は動かない（[ADR-008](adr/008-meal-edit.md)）
 12. **写真のカルーセル** — 複数枚付いた投稿は、写真をカルーセルで切り替えて見られる
@@ -41,20 +41,22 @@ spaces / space_members / invites          ← skill cloudflare-workers-space-mem
 users / credentials / sessions            ← skill cloudflare-workers-passkey-auth
 
 meals        (id, space_id, name, name_normalized, eaten_on, meal_type?,
-              recipe_url, shop_url, recipe_text (作り方メモ), note,
+              recipe_text (作り方メモ), note,
               mata_tabetai (bool), created_by, created_at, updated_at)
-              ※ 旧 recipe_source_type / url は凍結列（ADR-007 §2。Phase 4 の rebuild で掃除）
+              ※ 凍結列 = recipe_source_type / url（ADR-007 §2）と recipe_url / shop_url
+                （ADR-010 §3）。Phase 4 の rebuild でまとめて掃除
 meal_photos  (id, meal_id, r2_key, thumb_key, content_type, size_bytes, width, height,
               created_by, created_at)                                   ← skill cloudflare-r2-private-image-upload
-meal_link_previews (meal_id, kind ('recipe'|'shop'), url, status ('pending'|'ok'|'failed'),
-              title, description, site_name, image_r2_key, fetched_at, created_at)
-              PK(meal_id, kind)                                        ← ADR-007
+meal_links   (id, meal_id, kind ('recipe'|'shop'), position, url,
+              status ('pending'|'ok'|'failed'), title, description, site_name,
+              image_r2_key, fetched_at, created_at)                     ← ADR-010
+              ※ 旧 meal_link_previews は凍結表（ADR-010 §3）
 tags         (id, space_id, name, name_normalized)   UNIQUE(space_id, name_normalized)
 meal_tags    (meal_id, tag_id)                       PK(meal_id, tag_id)
 ```
 
 - `name_normalized` = NFKC 正規化 + trim + 小文字化。集計・サジェスト・タグ一意性はこちらを使う。表示は入力そのまま
-- `recipe_url` / `shop_url` / `recipe_text`（作り方メモ）は独立の任意 3 項目（併用可）。旧 `RecipeSource` DU（排他）は [ADR-007](adr/007-recipe-links-ogp.md) で廃止し、`recipe_source_type` と `url` は CHECK を満たすためだけの凍結列
+- レシピ URL（複数）/ お店・商品 URL（複数）/ `recipe_text`（作り方メモ）は独立の任意 3 項目（併用可）。URL は `meal_links` が持ち、`meals` の列ではない（[ADR-010](adr/010-multiple-links.md) §1）。旧 `RecipeSource` DU（排他）は [ADR-007](adr/007-recipe-links-ogp.md) で廃止し、`recipe_source_type` と `url` は CHECK を満たすためだけの凍結列
 - `meal_type`（朝/昼/夜/間食）は任意。集計要件には不要なので nullable
 - `eaten_on` は日付（JST の日付文字列）。時刻は持たない
 
@@ -76,7 +78,7 @@ meal_tags    (meal_id, tag_id)                       PK(meal_id, tag_id)
 - **集計は料理名**（`meals.name`）で `GROUP BY`。同じ料理でも冷蔵庫の中身で食材が変わるため、食材ではなく名前が集計単位。保存時に NFKC 正規化 + trim した `name_normalized` を持ち、表記ゆれを減らす
 - **食材はタグ**（`tags` / `meal_tags` の多対多、スペース単位で一意）。タグ検索は `?tags=a&tags=b` の AND
 - **サジェスト**: 投稿画面に料理名ごとの直近 1 件を出し、タグ（AND）で絞り込める。選ぶと前回のリンク 2 種・作り方メモ / タグを複製して編集できる（メモ・日付・タイミングは引き継がない — [ADR-005](adr/005-meal-suggestions.md) §5）
-- **リンクとメモ**はレシピ URL / お店・商品 URL / 作り方メモの独立 3 項目（併用可、排他をやめた）。URL プレビューは投稿時スナップショット + `meal_link_previews` + R2 — [ADR-007](adr/007-recipe-links-ogp.md)
-- **編集**は内容の全置き換え（`PUT /meals/:id`）。またたべたい・写真は別リソースのまま、タグは張り替え、URL を貼り替えたときだけプレビューを取り直す — [ADR-008](adr/008-meal-edit.md)
+- **リンクとメモ**はレシピ URL / お店・商品 URL / 作り方メモの独立 3 項目（併用可、排他をやめた）。URL は種類ごとに複数貼れ、合計 6 本まで（[ADR-010](adr/010-multiple-links.md) §2 — Workers Free の外部 subrequest 50/invocation が天井）。URL プレビューは投稿時スナップショットで、URL と同じ `meal_links` の行 + R2 — [ADR-007](adr/007-recipe-links-ogp.md) / [ADR-010](adr/010-multiple-links.md)
+- **編集**は内容の全置き換え（`PUT /meals/:id`）。またたべたい・写真は別リソースのまま、タグは張り替え、URL は同じものを据え置いて足し引きだけ行う（貼り替えた分だけプレビューを取り直す）— [ADR-008](adr/008-meal-edit.md) / [ADR-010](adr/010-multiple-links.md) §4
 - **またたべたい** は投稿に対するトグル（favorite）。UI 上の主役なので一覧・集計で前に出す
 - **日本語の部分一致検索**は当面 `LIKE '%…%'`（家族規模。`GET /meals?q=` の一覧フィルタ、ホームの検索 — [ADR-009](adr/009-photo-first-home.md) §1）。D1 の FTS5 は使えるが日本語には trigram tokenizer が要り、D1 での可否は要確認

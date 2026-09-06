@@ -92,7 +92,7 @@ test("a member of space A gets 404 for space B (API and UI)", async ({ page, bas
 
   // URL プレビューの画像も同じ連鎖（meal の space 一致で切れる。R2 には触れない）
   const crossPreview = await page.request.get(
-    `/api/spaces/${mine}/meals/${OTHER_MEAL_ID}/link-previews/recipe/image`,
+    `/api/spaces/${mine}/meals/${OTHER_MEAL_ID}/links/00000000-0000-4000-8000-000000000002/image`,
   );
   expect(crossPreview.status()).toBe(404);
   expect(await crossPreview.json()).toEqual({ error: { type: "not_found" } });

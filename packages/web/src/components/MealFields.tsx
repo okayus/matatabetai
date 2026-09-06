@@ -1,5 +1,15 @@
 import type { ReactNode } from "react";
-import { MEAL_TYPES, MEAL_TYPE_LABEL, type MealFormState } from "../lib/meal-form";
+import {
+  MAX_LINKS_PER_MEAL,
+  MEAL_TYPES,
+  MEAL_TYPE_LABEL,
+  addUrlRow,
+  removeUrlRow,
+  setUrlRow,
+  urlFieldLabel,
+  urlRows,
+  type MealFormState,
+} from "../lib/meal-form";
 
 // 記録する / 編集する で同じ欄を出す（ADR-008 §7）。写真は作成と編集で扱いが違う
 // （作成は送信まで手元に貯める / 編集は既にある投稿にその場で足し引き）ので、
@@ -20,6 +30,8 @@ export function MealFields({
   photos?: ReactNode;
 }) {
   const id = (suffix: string) => `${idPrefix}${suffix}`;
+  // 上限は kind ごとではなく合計（ADR-010 §2）なので、行数は両方を足して数える
+  const total = urlRows(form.recipeUrls).length + urlRows(form.shopUrls).length;
   return (
     <>
       <div className="field">
@@ -82,33 +94,26 @@ export function MealFields({
       <fieldset className="fieldgroup" aria-describedby={id("LinksHint")}>
         <legend>レシピ・リンク</legend>
         <p id={id("LinksHint")} className="hint">
-          どれも任意です。レシピを見ながら自分のアレンジも一緒に残せます
+          どれも任意です。レシピを見ながら自分のアレンジも一緒に残せます（URL は合わせて{" "}
+          {MAX_LINKS_PER_MEAL} 本まで）
         </p>
         <div className="stack">
-          <div className="field">
-            <label htmlFor={id("RecipeUrl")}>レシピ URL</label>
-            <input
-              id={id("RecipeUrl")}
-              name="recipeUrl"
-              type="url"
-              placeholder="https://…"
-              maxLength={2048}
-              value={form.recipeUrl}
-              onChange={(e) => onChange("recipeUrl", e.currentTarget.value)}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor={id("ShopUrl")}>お店・商品 URL</label>
-            <input
-              id={id("ShopUrl")}
-              name="shopUrl"
-              type="url"
-              placeholder="https://…"
-              maxLength={2048}
-              value={form.shopUrl}
-              onChange={(e) => onChange("shopUrl", e.currentTarget.value)}
-            />
-          </div>
+          <UrlFields
+            id={id("RecipeUrl")}
+            name="recipeUrl"
+            label="レシピ URL"
+            urls={form.recipeUrls}
+            total={total}
+            onChange={(next) => onChange("recipeUrls", next)}
+          />
+          <UrlFields
+            id={id("ShopUrl")}
+            name="shopUrl"
+            label="お店・商品 URL"
+            urls={form.shopUrls}
+            total={total}
+            onChange={(next) => onChange("shopUrls", next)}
+          />
           <div className="field">
             <label htmlFor={id("RecipeMemo")}>作り方メモ</label>
             <textarea
@@ -136,5 +141,70 @@ export function MealFields({
         />
       </div>
     </>
+  );
+}
+
+// 同じ種類の URL を何本でも貼れる欄（ADR-010 §6）。行は常に 1 つ以上あり、2 行以上のときだけ
+// 「外す」が出る（1 行しかないときの「外す」は空にするのと同じで、意味が無い）。
+// 見出しは <label> ではなく group の名前 — 中の入力が 1 つとは限らないので、
+// 各行の読み上げ名は aria-label が持つ（1 行なら番号なし）
+function UrlFields({
+  id,
+  name,
+  label,
+  urls,
+  total,
+  onChange,
+}: {
+  id: string;
+  name: string;
+  label: string;
+  urls: string[];
+  // レシピとお店・商品を合わせた行数。上限は合計で数える（ADR-010 §2）
+  total: number;
+  onChange: (next: string[]) => void;
+}) {
+  const rows = urlRows(urls);
+  return (
+    <div className="field" role="group" aria-labelledby={`${id}Label`}>
+      <span id={`${id}Label`} className="field__label">
+        {label}
+      </span>
+      {rows.map((url, i) => (
+        // key は行番号。値は制御されているので、行を抜いても前の行の値が残ることはない
+        <div className="row row--nowrap" key={i}>
+          <input
+            id={i === 0 ? id : `${id}${i}`}
+            name={name}
+            type="url"
+            className="field--grow"
+            placeholder="https://…"
+            maxLength={2048}
+            aria-label={urlFieldLabel(label, i, rows.length)}
+            value={url}
+            onChange={(e) => onChange(setUrlRow(rows, i, e.currentTarget.value))}
+          />
+          {rows.length > 1 && (
+            <button
+              type="button"
+              className="btn btn--small"
+              aria-label={`${urlFieldLabel(label, i, rows.length)} を外す`}
+              onClick={() => onChange(removeUrlRow(rows, i))}
+            >
+              外す
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        type="button"
+        className="btn btn--small btn--ghost field__add"
+        // 上限に達したら押せない（送ってから断られるより、押せない方が分かる）
+        disabled={total >= MAX_LINKS_PER_MEAL}
+        onClick={() => onChange(addUrlRow(rows))}
+      >
+        ＋ {label} を追加
+      </button>
+    </div>
   );
 }

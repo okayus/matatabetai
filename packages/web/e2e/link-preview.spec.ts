@@ -3,7 +3,8 @@ import { E2E_INITIAL_REGISTRATION_TOKEN, E2E_PORT } from "../playwright.config";
 import { enableVirtualAuthenticator } from "./helpers/webauthn";
 
 // URL プレビュー（ADR-007）の配線: 投稿 → 応答後の waitUntil が OGP を取って
-// meal_link_previews と private R2 に置く → 次に一覧を読むとカードになる。
+// meal_links と private R2 に置く → 次に一覧を読むとカードになる。
+// 1 投稿に複数本貼れる（ADR-010）ので、同じ種類の URL が独立にカードになることも見る。
 // 外部サイトには依存させない（サンドボックスは egress 制限で出られない — ADR-007 §7）。
 // 「外部サイト」は wrangler dev 自身が配る固定 HTML で、Worker はそれを普通の URL として取りに行く。
 // ブラウザは localhost で開くが、Worker → 自分自身は 127.0.0.1（コンテナの dual-stack 対策）。
@@ -32,32 +33,48 @@ test("OGP が取れた URL はカードになり、取れない URL はプレー
   const showDetails = () => feed.getByRole("button", { name: "くわしく" }).click();
   await openComposer();
   await composer.getByLabel("料理名").fill("プレビューの肉じゃが");
-  await composer.getByLabel("レシピ URL").fill(FIXTURE_URL);
-  await composer.getByLabel("お店・商品 URL").fill(UNREACHABLE_URL);
+  // 1 本目は最初からある欄（1 行しかない間は番号が付かない — ADR-010 §6）。
+  // 2 本目は「追加」で欄を増やしてから入れる
+  await composer.getByRole("textbox", { name: "レシピ URL", exact: true }).fill(FIXTURE_URL);
+  await composer.getByRole("button", { name: "＋ レシピ URL を追加" }).click();
+  await composer.getByRole("textbox", { name: "レシピ URL 2" }).fill(TITLE_ONLY_URL);
+  await composer.getByRole("textbox", { name: "お店・商品 URL", exact: true }).fill(UNREACHABLE_URL);
   await composer.getByRole("button", { name: "記録する" }).click();
   await expect(composer).toBeHidden();
   await showDetails();
   await expect(feed.getByText("プレビューの肉じゃが", { exact: true })).toBeVisible();
 
-  // 投稿の応答時点ではどちらも取得中。カードはまだ無く、リンクとしては最初から働く
-  await expect(feed.getByRole("link", { name: /^レシピ:/ })).toHaveAttribute("href", FIXTURE_URL);
+  // 投稿の応答時点ではどれも取得中。カードはまだ無く、リンクとしては最初から働く。
+  // レシピが 2 本並ぶので、href で見分ける
+  await expect(feed.getByRole("link", { name: /^レシピ:/ }).first()).toHaveAttribute(
+    "href",
+    FIXTURE_URL,
+  );
 
   // 取得は応答後（waitUntil）なので、一覧を読み直すまで反映されない。
   // og:title が出る = <title>（「タイトル要素のほう」）ではなく OGP を読んでいる証拠でもあり、
   // fixture が配られず SPA の index.html が返っていないことの証拠でもある
   const card = feed.getByRole("link", { name: /e2e レシピ: ほくほく肉じゃが/ });
+  // 2 本目のレシピ URL も独立にカードになる。OGP を出さないページなので見出しは <title> で
+  // 画像なし（og:* → <title> の fallback は HTMLRewriter のセレクタが当たっている証拠）。
+  // 取得は 2 本が並行に走るので、どちらも出るまで読み直す
+  const titleOnlyCard = feed.getByRole("link", { name: /タイトルだけのページ \| e2e 商店/ });
   await expect(async () => {
     await page.reload();
     await showDetails();
     await expect(card).toBeVisible({ timeout: 2_000 });
+    await expect(titleOnlyCard).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 30_000 });
   await expect(card).toHaveAttribute("href", FIXTURE_URL);
   await expect(card).toContainText("e2e レシピ帳");
+  await expect(titleOnlyCard).toHaveAttribute("href", TITLE_ONLY_URL);
+  await expect(titleOnlyCard.locator("img")).toHaveCount(0);
 
   // og:image は hotlink せず取り込んである: 相対 URL が解決され、private R2 から
   // 認可つき proxy で配られ、ブラウザが実際にデコードできている
   const image = card.locator("img");
-  await expect(image).toHaveAttribute("src", /\/link-previews\/recipe\/image$/);
+  // 配信 URL は行の id ごと（kind ではない — ADR-010 §1）
+  await expect(image).toHaveAttribute("src", /\/links\/[0-9a-f-]{36}\/image$/);
   await expect
     .poll(async () => image.evaluate((el: HTMLImageElement) => el.naturalWidth))
     .toBeGreaterThan(0);
@@ -65,24 +82,31 @@ test("OGP が取れた URL はカードになり、取れない URL はプレー
   const served = await page.request.get(imagePath);
   expect(served.status()).toBe(200);
   expect(served.headers()["content-type"]).toBe("image/png");
-  // 写真と違い、この URL は kind ごとに固定で貼り替えると中身が変わる（ADR-008 §5）。
-  // ブラウザに寝かせず毎回 ETag で確かめさせる
-  expect(served.headers()["cache-control"]).toBe("private, no-cache");
+  // 行は不変なのでこの URL の中身は変わらない。ブラウザに寝かせてよい（ADR-010 §1）
+  expect(served.headers()["cache-control"]).toBe("private, max-age=31536000, immutable");
 
   // 取れなかったほうは行が failed のまま = プレーンリンク（ADR-007 §5）。
-  // 画像も無いので proxy は 404
+  // 画像も無いので proxy は 404（行の無い id も同じ 404）
   await expect(feed.getByRole("link", { name: /^お店・商品:/ })).toHaveAttribute(
     "href",
     UNREACHABLE_URL,
   );
-  expect((await page.request.get(imagePath.replace("/recipe/", "/shop/"))).status()).toBe(404);
+  expect(
+    (
+      await page.request.get(
+        imagePath.replace(/\/links\/[0-9a-f-]{36}\//, "/links/00000000-0000-4000-8000-000000000003/"),
+      )
+    ).status(),
+  ).toBe(404);
 
   // 編集で URL を貼り替えると、そのぶんだけ取り直す（ADR-008 §5）。旧行は捨てられ、
   // 一緒に旧 og:image も R2 から消えるので、同じ配信 URL が 404 になる
   await feed.getByRole("button", { name: /編集/ }).click();
   const editForm = page.getByRole("form", { name: "記録を編集" });
-  await expect(editForm.getByLabel("レシピ URL")).toHaveValue(FIXTURE_URL);
-  await editForm.getByLabel("レシピ URL").fill(SWAPPED_URL);
+  // 2 本あるので欄に番号が付き、保存済みの URL がその順で入っている
+  await expect(editForm.getByRole("textbox", { name: "レシピ URL 1" })).toHaveValue(FIXTURE_URL);
+  await expect(editForm.getByRole("textbox", { name: "レシピ URL 2" })).toHaveValue(TITLE_ONLY_URL);
+  await editForm.getByRole("textbox", { name: "レシピ URL 1" }).fill(SWAPPED_URL);
   await editForm.getByRole("button", { name: "保存する" }).click();
   await expect(editForm).toHaveCount(0);
 
@@ -96,26 +120,13 @@ test("OGP が取れた URL はカードになり、取れない URL はプレー
   await expect(card).toHaveCount(0);
   await expect(swappedCard.locator("img")).toHaveCount(0);
   expect((await page.request.get(imagePath)).status()).toBe(404);
-  // 触っていない お店・商品 の欄はそのまま（同じ URL の行は取り直さない）
+  // 触っていない行はそのまま（同じ URL の行は取り直さない — ADR-010 §4）。
+  // 貼り替えたのと同じ種類の 2 本目も、別の種類の お店・商品 も残っている
+  await expect(titleOnlyCard).toHaveAttribute("href", TITLE_ONLY_URL);
   await expect(feed.getByRole("link", { name: /^お店・商品:/ })).toHaveAttribute(
     "href",
     UNREACHABLE_URL,
   );
-
-  // OGP を出さないページは <title> を見出しにした画像なしのカードになる。
-  // og:* → <title> の fallback は HTMLRewriter のセレクタが実際に当たっているかの検査でもある
-  await openComposer();
-  await composer.getByLabel("料理名").fill("タイトルだけの記録");
-  await composer.getByLabel("レシピ URL").fill(TITLE_ONLY_URL);
-  await composer.getByRole("button", { name: "記録する" }).click();
-  await expect(composer).toBeHidden();
-  const titleOnlyCard = feed.getByRole("link", { name: /タイトルだけのページ \| e2e 商店/ });
-  await expect(async () => {
-    await page.reload();
-    await showDetails();
-    await expect(titleOnlyCard).toBeVisible({ timeout: 2_000 });
-  }).toPass({ timeout: 30_000 });
-  await expect(titleOnlyCard.locator("img")).toHaveCount(0);
 
   // 投稿を消すと R2 の og:image も消える（写真と同じ R2 → D1 の順 — ADR-004 §6）
   page.once("dialog", (dialog) => void dialog.accept());

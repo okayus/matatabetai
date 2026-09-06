@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_LINKS_PER_MEAL,
   MealContentInput,
   EatenOn,
   MealListQuery,
@@ -135,8 +136,8 @@ describe("MealContentInput", () => {
     name: "肉じゃが",
     eatenOn: "2026-09-01",
     mealType: null,
-    recipeUrl: null,
-    shopUrl: null,
+    recipeUrls: [],
+    shopUrls: [],
     recipeMemo: null,
     note: null,
     tags: [],
@@ -146,8 +147,8 @@ describe("MealContentInput", () => {
     expect(r.success).toBe(true);
     if (r.success) {
       expect(r.data.mealType).toBeNull();
-      expect(r.data.recipeUrl).toBeNull();
-      expect(r.data.shopUrl).toBeNull();
+      expect(r.data.recipeUrls).toEqual([]);
+      expect(r.data.shopUrls).toEqual([]);
       expect(r.data.recipeMemo).toBeNull();
       expect(r.data.note).toBeNull();
       expect(r.data.tags).toEqual([]);
@@ -162,33 +163,90 @@ describe("MealContentInput", () => {
     expect(MealContentInput.safeParse({ ...base, note: "うまい\nまた作る" }).success).toBe(true);
     expect(MealContentInput.safeParse({ ...base, note: `a${String.fromCharCode(7)}b` }).success).toBe(false);
   });
-  it("レシピ URL・お店 URL・作り方メモは併用できる（排他ではない）", () => {
+  it("レシピ URL・お店 URL・作り方メモは併用でき、どちらの URL も複数貼れる（ADR-010 §1）", () => {
     const r = MealContentInput.safeParse({
       ...base,
-      recipeUrl: "https://example.com/recipe/1",
-      shopUrl: "https://shop.example.com/item",
+      recipeUrls: ["https://example.com/recipe/1", " https://example.com/recipe/2 "],
+      shopUrls: ["https://shop.example.com/item"],
       recipeMemo: "みりんを少し多めに\n煮汁は残す",
     });
     expect(r.success).toBe(true);
     if (r.success) {
-      expect(r.data.recipeUrl).toBe("https://example.com/recipe/1");
-      expect(r.data.shopUrl).toBe("https://shop.example.com/item");
+      expect(r.data.recipeUrls).toEqual([
+        "https://example.com/recipe/1",
+        "https://example.com/recipe/2",
+      ]);
+      expect(r.data.shopUrls).toEqual(["https://shop.example.com/item"]);
       expect(r.data.recipeMemo).toBe("みりんを少し多めに\n煮汁は残す");
     }
   });
   it("どちらの URL 欄も http(s) 以外を拒む", () => {
-    expect(MealContentInput.safeParse({ ...base, recipeUrl: "javascript:alert(1)" }).success).toBe(false);
-    expect(MealContentInput.safeParse({ ...base, shopUrl: "javascript:alert(1)" }).success).toBe(false);
-    expect(MealContentInput.safeParse({ ...base, recipeUrl: "https://example.com" }).success).toBe(true);
+    expect(MealContentInput.safeParse({ ...base, recipeUrls: ["javascript:alert(1)"] }).success).toBe(false);
+    expect(MealContentInput.safeParse({ ...base, shopUrls: ["javascript:alert(1)"] }).success).toBe(false);
+    expect(MealContentInput.safeParse({ ...base, recipeUrls: ["https://example.com"] }).success).toBe(true);
   });
-  it("空文字の URL 欄・作り方メモは「なし」になる（未入力と同じ）", () => {
-    const r = MealContentInput.safeParse({ ...base, recipeUrl: "  ", shopUrl: "", recipeMemo: " " });
+  it("空欄は落ちる（フォームは常に空の 1 行を残すので、未入力はこの形で届く）", () => {
+    const r = MealContentInput.safeParse({
+      ...base,
+      recipeUrls: ["  ", "https://example.com/a", ""],
+      shopUrls: [""],
+      recipeMemo: " ",
+    });
     expect(r.success).toBe(true);
     if (r.success) {
-      expect(r.data.recipeUrl).toBeNull();
-      expect(r.data.shopUrl).toBeNull();
+      expect(r.data.recipeUrls).toEqual(["https://example.com/a"]);
+      expect(r.data.shopUrls).toEqual([]);
       expect(r.data.recipeMemo).toBeNull();
     }
+  });
+  it("同じ kind の中の重複は 1 本に畳む（同じカードを 2 枚並べない）", () => {
+    const r = MealContentInput.safeParse({
+      ...base,
+      recipeUrls: ["https://example.com/a", "https://example.com/a", "https://example.com/b"],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.recipeUrls).toEqual(["https://example.com/a", "https://example.com/b"]);
+    }
+  });
+  it("kind をまたぐ重複は畳まない（レシピとしても店としても貼れる）", () => {
+    const r = MealContentInput.safeParse({
+      ...base,
+      recipeUrls: ["https://example.com/a"],
+      shopUrls: ["https://example.com/a"],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.recipeUrls).toEqual(["https://example.com/a"]);
+      expect(r.data.shopUrls).toEqual(["https://example.com/a"]);
+    }
+  });
+  it(`URL は合計 ${MAX_LINKS_PER_MEAL} 本まで（kind ごとではなく合計で数える — ADR-010 §2）`, () => {
+    const urls = (n: number, prefix: string) =>
+      Array.from({ length: n }, (_, i) => `https://${prefix}.example.com/${i}`);
+    expect(
+      MealContentInput.safeParse({ ...base, recipeUrls: urls(MAX_LINKS_PER_MEAL, "r") }).success,
+    ).toBe(true);
+    expect(
+      MealContentInput.safeParse({ ...base, recipeUrls: urls(MAX_LINKS_PER_MEAL + 1, "r") }).success,
+    ).toBe(false);
+    // 片方だけ見れば上限内でも、合わせて超えるなら拒む
+    expect(
+      MealContentInput.safeParse({ ...base, recipeUrls: urls(4, "r"), shopUrls: urls(3, "s") })
+        .success,
+    ).toBe(false);
+    expect(
+      MealContentInput.safeParse({ ...base, recipeUrls: urls(4, "r"), shopUrls: urls(2, "s") })
+        .success,
+    ).toBe(true);
+    // 重複を畳んだ後の本数で数える
+    expect(
+      MealContentInput.safeParse({
+        ...base,
+        recipeUrls: [...urls(4, "r"), ...urls(2, "r")],
+        shopUrls: urls(2, "s"),
+      }).success,
+    ).toBe(true);
   });
   it("タグは 20 個まで", () => {
     const tags = Array.from({ length: 21 }, (_, i) => `tag${i}`);

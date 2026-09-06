@@ -38,10 +38,11 @@ export type Credential = {
   lastUsedAt: string | null;
 };
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
-// レシピ URL / お店・商品 URL / 作り方メモ は独立した任意の 3 項目（併用可 — ADR-007 §1）
+// レシピ URL（複数）/ お店・商品 URL（複数）/ 作り方メモ は独立した任意の 3 項目
+// （併用可 — ADR-007 §1、複数化は ADR-010 §1）。送るときの形で、受け取る形は MealLink[]
 export type MealLinks = {
-  recipeUrl: string | null;
-  shopUrl: string | null;
+  recipeUrls: string[];
+  shopUrls: string[];
   recipeMemo: string | null;
 };
 export type MealTag = { id: string; name: string };
@@ -49,16 +50,22 @@ export type MealTag = { id: string; name: string };
 // プレーンリンクのまま出す（3 状態のうち ok だけが見た目を変える — ADR-007 §5）
 export type LinkPreviewKind = "recipe" | "shop";
 export type LinkPreview =
-  | { kind: LinkPreviewKind; status: "pending" }
+  | { status: "pending" }
   | {
-      kind: LinkPreviewKind;
       status: "ok";
       title: string;
       description: string | null;
       siteName: string | null;
       hasImage: boolean;
     }
-  | { kind: LinkPreviewKind; status: "failed" };
+  | { status: "failed" };
+// 貼られた URL 1 本。並びは レシピ → お店・商品、その中は入力した順（ADR-010 §1）
+export type MealLink = {
+  id: string;
+  kind: LinkPreviewKind;
+  url: string;
+  preview: LinkPreview;
+};
 // width / height は縮小後の本体寸法。<img> の寸法予約（CLS 回避）に使う
 export type MealPhoto = {
   id: string;
@@ -67,16 +74,17 @@ export type MealPhoto = {
   hasThumb: boolean;
   createdAt: string;
 };
-export type Meal = MealLinks & {
+export type Meal = {
   id: string;
   name: string;
   eatenOn: string;
   mealType: MealType | null;
+  recipeMemo: string | null;
   note: string | null;
   mataTabetai: boolean;
   tags: MealTag[];
   photos: MealPhoto[];
-  previews: LinkPreview[];
+  links: MealLink[];
   createdBy: string;
   createdByName: string;
   createdAt: string;
@@ -295,8 +303,8 @@ export const deleteMealPhoto = (spaceId: string, mealId: string, photoId: string
   del<Record<string, never>>(`/api/spaces/${spaceId}/meals/${mealId}/photos/${photoId}`);
 
 // プレビューの og:image も private R2 を Worker 経由で配る（写真と同じ流儀。URL は id から組む）
-export const linkPreviewImageUrl = (spaceId: string, mealId: string, kind: LinkPreviewKind) =>
-  `/api/spaces/${spaceId}/meals/${mealId}/link-previews/${kind}/image`;
+export const linkPreviewImageUrl = (spaceId: string, mealId: string, linkId: string) =>
+  `/api/spaces/${spaceId}/meals/${mealId}/links/${linkId}/image`;
 
 export const listInvites = (spaceId: string) => api<PendingInvite[]>(`/api/spaces/${spaceId}/invites`);
 export const issueInvite = (spaceId: string) => post<IssuedInvite>(`/api/spaces/${spaceId}/invites`);
