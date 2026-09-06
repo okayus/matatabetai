@@ -583,8 +583,7 @@
     font-size: clamp(1.25rem, 1rem + 1.25vw, 1.5rem);
   }
   /* 記録ボタン。スクロールしても常に右下にいる（position: fixed）。祖先に transform / filter /
-     contain が無いので、包含ブロックはビューポートのまま。dialog（記録フォーム・写真の拡大）は
-     top layer にいるので、開いている間このボタンは自動的にその背後に回る（隠す処理は要らない） */
+     contain が無いので、包含ブロックはビューポートのまま */
   .fab {
     position: fixed;
     inset-block-end: calc(var(--space-3) + env(safe-area-inset-bottom));
@@ -600,6 +599,13 @@
   .fab__icon {
     inline-size: 45%;
     block-size: 45%;
+  }
+  /* modal（記録フォーム・記録の詳細）が開いている間は出さない。top layer の背後には回るが、
+     backdrop は半透明なので、広い画面ではカードの脇に薄く残って「押せそうなのに押せない」ボタンに
+     見える。背後は inert でタブ順にも読み上げにも既にいないので、消しても失うものは無い
+     （閉じるときの焦点戻しは :modal が外れた後に走るので、ボタンは焦点を受け取れる） */
+  html:has(dialog:modal) .fab {
+    display: none;
   }
   /* 右下に浮いたボタンが、いちばん下までスクロールしたときに最後の写真を隠さないための逃げ。
      カードの内側（padding）ではなく外に置く — 記録が数件で画面が余っているときに、
