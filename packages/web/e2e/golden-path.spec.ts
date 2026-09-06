@@ -5,7 +5,8 @@ import { enableVirtualAuthenticator } from "./helpers/webauthn";
 
 // 配線の事実: 初回登録（パスキー作成 → users/spaces/space_members/credentials/sessions）→
 // リロードでセッションが残る → 記録フォーム（dialog）を開いて投稿作成（meals/tags/meal_tags +
-// 写真 2 枚: 縮小 → R2 → proxy 配信・304）→ 写真 1 枚削除 → またたべたいトグル →
+// 写真 2 枚: 縮小 → R2 → proxy 配信・304）→ 写真から記録の詳細（送り・編集で写真 1 枚削除）→
+// 壁のセルからも同じ詳細 → またたべたいトグル →
 // リロードで投稿・トグル・写真が残る → サジェスト（料理名ごとの直近 1 件・タグ AND 絞り込み・
 // リンク 2 種と作り方メモの引き継ぎ）→ ホームの検索（♥ / タグ AND / 料理名の部分一致、URL に残る）→
 // ふりかえりの集計と、札・行からホームへの遷移 → 編集 → 削除（R2 も消える）→ 招待リンク発行 →
@@ -82,13 +83,30 @@ test("register → reload → meal record with photos → suggestion → search 
   });
   expect(conditional.status()).toBe(304);
 
-  // lightbox で 1 枚目を拡大 → 削除（R2 → D1 の順で消え、route が 404 になる）
-  await page.getByRole("button", { name: "肉じゃが の写真 1 を拡大" }).click();
+  // 写真をタップすると記録の詳細（dialog — requirements 16 / ADR-011）が開く。送りは常に見えていて
+  // （← → と 何枚目かの札）、直すのもそこから。写真を消せるのは編集の中だけ（§4）で、
+  // 消すと R2 → D1 の順に消えて route が 404 になる
+  await feed.getByRole("button", { name: "肉じゃが の写真 1 をひらく" }).click();
+  const detail = page.getByRole("dialog", { name: "肉じゃが" });
+  await expect(detail.getByText("1 / 2")).toBeVisible();
+  await detail.getByRole("button", { name: "次の写真" }).click();
+  await expect(detail.getByText("2 / 2")).toBeVisible();
+  await detail.getByRole("button", { name: "編集" }).click();
   page.once("dialog", (dialog) => void dialog.accept());
-  await page.getByRole("button", { name: "写真を削除" }).click();
-  await expect(thumbs).toHaveCount(1);
+  await detail.getByRole("button", { name: /外す\s*（肉じゃが の写真 1）/ }).click();
   await expect.poll(async () => (await page.request.get(photoPaths[0]!)).status()).toBe(404);
   expect((await page.request.get(photoPaths[1]!)).status()).toBe(200);
+  await detail.getByRole("button", { name: "やめる" }).click();
+  await detail.getByRole("button", { name: "閉じる" }).click();
+  await expect(detail).toBeHidden();
+  await expect(thumbs).toHaveCount(1);
+
+  // 写真の壁（既定の見せ方）からも同じ詳細が開く — 壁ではここが記録に触れる唯一の入口（ADR-011 §1）
+  await showDetails(); // 同じトグルで壁へ戻す
+  await feed.getByRole("button", { name: /肉じゃが.*をひらく/ }).click();
+  await expect(detail.getByRole("button", { name: "編集" })).toBeVisible();
+  await detail.getByRole("button", { name: "閉じる" }).click();
+  await showDetails();
 
   // またたべたいトグル → リロードで投稿もトグルも写真も残る（永続化はユニットでは検知不能）。
   // 検索の ♥ 札も「またたべたい」なので、行のボタンは読み上げ用の料理名で選ぶ

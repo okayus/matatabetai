@@ -3,8 +3,8 @@ import { formatEatenOn } from "../format";
 import { photoGridItems } from "../lib/photo-grid";
 
 // タイムラインの写真グリッド（requirements 13）。1 投稿 1 セルで代表は 1 枚目、
-// タップでその投稿の拡大表示へ（lib/photo-grid.ts に決めの理由）。
-// 日付見出しは置かない — 連続した壁として眺める場で、いつのものかは拡大の中に出る。
+// タップでその投稿の詳細へ（lib/photo-grid.ts に決めの理由）。
+// 日付見出しは置かない — 連続した壁として眺める場で、いつのものかは詳細の中に出る。
 // セルはサムネ（320px）を使う: スマホ 3 列のセル幅なら DPR 3 でもほぼ等倍で、
 // カード幅いっぱいに出す一覧（本体 1600px — #51）とは要る解像度が違う
 export function PhotoGrid({
@@ -59,7 +59,7 @@ export function PhotoGrid({
             <span className="visually-hidden">
               {meal.mataTabetai ? "またたべたい。" : ""}
               {meal.name}（{formatEatenOn(meal.eatenOn)}
-              {meal.photos.length > 1 ? `、写真 ${meal.photos.length} 枚` : ""}）を拡大
+              {meal.photos.length > 1 ? `、写真 ${meal.photos.length} 枚` : ""}）をひらく
             </span>
           </button>
         </li>
