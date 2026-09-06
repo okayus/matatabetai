@@ -22,6 +22,7 @@
   --space-5: 2.5rem;
   --font-sans: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
   --tap: 3rem;
+  --fab-size: 3.5rem;
 
   accent-color: var(--color-accent);
 }
@@ -558,9 +559,34 @@
     border-color: var(--color-accent);
     color: var(--color-accent);
   }
-  /* ホームの h1（スペース名）。「＋ 記録する」と 1 行に収まる大きさに抑える — 主役は壁で、題は控えめでよい */
+  /* ホームの h1（スペース名）。主役は壁なので題は控えめに */
   .feed-title {
     font-size: clamp(1.25rem, 1rem + 1.25vw, 1.5rem);
+  }
+  /* 記録ボタン。スクロールしても常に右下にいる（position: fixed）。祖先に transform / filter /
+     contain が無いので、包含ブロックはビューポートのまま。dialog（記録フォーム・写真の拡大）は
+     top layer にいるので、開いている間このボタンは自動的にその背後に回る（隠す処理は要らない） */
+  .fab {
+    position: fixed;
+    inset-block-end: calc(var(--space-3) + env(safe-area-inset-bottom));
+    inset-inline-end: calc(var(--space-3) + env(safe-area-inset-right));
+    z-index: 10;
+    inline-size: var(--fab-size);
+    block-size: var(--fab-size);
+    padding: 0;
+    border-radius: 50%;
+    /* 写真の壁の上に浮くので、影で面から持ち上げる（枠線だけだと写真に紛れる） */
+    box-shadow: 0 2px 8px light-dark(rgb(0 0 0 / 0.3), rgb(0 0 0 / 0.5));
+  }
+  .fab__icon {
+    inline-size: 45%;
+    block-size: 45%;
+  }
+  /* 右下に浮いたボタンが、いちばん下までスクロールしたときに最後の写真を隠さないための逃げ。
+     カードの内側（padding）ではなく外に置く — 記録が数件で画面が余っているときに、
+     カードの底だけが間延びして見えないように */
+  .feed--fab {
+    margin-block-end: calc(var(--fab-size) + var(--space-3) + env(safe-area-inset-bottom));
   }
   /* ホームの検索（requirements 15、ADR-009）。壁の上の 1 行: 入力が伸び、「さがす」は入力と同じ高さ */
   .search-form {

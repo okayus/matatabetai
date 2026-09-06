@@ -122,21 +122,30 @@ function MealsSection({
 
   return (
     <>
-      <section className="card stack" aria-labelledby="feedHeading">
-        <div className="row row--between">
-          <h1 id="feedHeading" className="feed-title">
-            {space.name}
-          </h1>
-          {/* 見出しの横に収まる短い表示（スマホ幅で折り返すと写真が 1 行ぶん下がる）。名前は読み上げ用に補う */}
-          <button
-            type="button"
-            className="btn btn--primary"
-            aria-label="たべたものを記録する"
-            onClick={() => setComposing(true)}
-          >
-            ＋ 記録する
-          </button>
-        </div>
+      <section className="card stack feed--fab" aria-labelledby="feedHeading">
+        <h1 id="feedHeading" className="feed-title">
+          {space.name}
+        </h1>
+        {/* 記録ボタンは画面の右下に固定する（fixed）— 壁をどれだけスクロールしても、
+            戻らずに押せる場所にいる。DOM 上は見出しの直後に置いて、読み上げとタブ順を
+            「スペース名 → 記録する → 検索」に保つ（見た目の位置と流れの位置を分ける）。
+            絵だけのボタンなので名前は aria-label が持つ */}
+        <button
+          type="button"
+          className="btn btn--primary fab"
+          aria-label="たべたものを記録する"
+          onClick={() => setComposing(true)}
+        >
+          <svg className="fab__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M12 5.5v13M5.5 12h13"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
         <MealSearch
           filter={filter}
           tagList={tagList}
