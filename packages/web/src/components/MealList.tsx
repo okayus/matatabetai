@@ -18,11 +18,13 @@ import {
   uploadMealPhoto,
   type LinkPreviewKind,
   type Meal,
+  type MealCook,
   type MealPhoto,
 } from "../api";
 import { formatEatenOn } from "../format";
 import { clampIndex, snapIndex } from "../lib/carousel";
 import { preparePhoto } from "../lib/image-prep";
+import { formatCredit, mergeCookOptions } from "../lib/meal-cooks";
 import { MEAL_TYPE_LABEL, mealFormFrom, toMealContentBody, type MealFormState } from "../lib/meal-form";
 import { sortByRecency } from "../lib/meal-order";
 import { MealFields } from "./MealFields";
@@ -35,12 +37,16 @@ import { PhotoGrid } from "./PhotoGrid";
 export function MealList({
   spaceId,
   meals,
+  cookOptions,
   view = "list",
   onMealsChange,
   onError,
 }: {
   spaceId: string;
   meals: Meal[];
+  // 編集フォームの「作った人」の札（ADR-012 §6）。一覧は名前を meal.cooks から出すので、
+  // これが要るのは直すときだけ
+  cookOptions: MealCook[];
   view?: "list" | "grid" | undefined;
   // 楽観更新の書き戻し。一覧の配列は親が持つ
   onMealsChange: (update: (prev: Meal[]) => Meal[]) => void;
@@ -126,6 +132,7 @@ export function MealList({
                   key={m.id}
                   spaceId={spaceId}
                   meal={m}
+                  cookOptions={cookOptions}
                   editing={editingId === m.id}
                   onEdit={() => setEditingId(m.id)}
                   onCancelEdit={() => setEditingId(null)}
@@ -144,6 +151,7 @@ export function MealList({
       <MealDetailDialog
         spaceId={spaceId}
         meal={detailMeal}
+        cookOptions={cookOptions}
         openAt={detail?.index ?? 0}
         editing={detailEditing}
         onEdit={() => setDetailEditing(true)}
@@ -173,6 +181,7 @@ function groupByEatenOn(meals: Meal[]): [string, Meal[]][] {
 type MealItemProps = {
   spaceId: string;
   meal: Meal;
+  cookOptions: MealCook[];
   editing: boolean;
   onEdit: () => void;
   onCancelEdit: () => void;
@@ -200,6 +209,7 @@ function MealItem(props: MealItemProps) {
         <MealEditForm
           spaceId={props.spaceId}
           meal={props.meal}
+          cookOptions={props.cookOptions}
           idPrefix={`edit-${props.meal.id}-`}
           onCancelEdit={props.onCancelEdit}
           onSaved={props.onSaved}
@@ -236,7 +246,10 @@ function MealItem(props: MealItemProps) {
       )}
       {meal.note && <p className="muted pre-wrap">{meal.note}</p>}
       <div className="row row--between">
-        <span className="muted">{meal.createdByName} が記録</span>
+        {/* 誰が作ったかを先に読ませる（requirements 17）。記録した人は後ろ */}
+        <span className="muted">
+          {formatCredit(meal.cooks, { userId: meal.createdBy, displayName: meal.createdByName })}
+        </span>
         <div className="row">
           <button
             type="button"
@@ -262,6 +275,7 @@ function MealItem(props: MealItemProps) {
 type MealEditFormProps = {
   spaceId: string;
   meal: Meal;
+  cookOptions: MealCook[];
   // 同じページに 2 つ出ることがある（一覧の行 / 詳細の中）ので、label の htmlFor を分ける
   idPrefix: string;
   onCancelEdit: () => void;
@@ -277,6 +291,7 @@ type MealEditFormProps = {
 function MealEditForm({
   spaceId,
   meal,
+  cookOptions,
   idPrefix,
   onCancelEdit,
   onSaved,
@@ -342,6 +357,8 @@ function MealEditForm({
       <MealFields
         idPrefix={idPrefix}
         form={form}
+        // スペースを抜けた人が作った記録でも、その人の札は選ばれたまま出す（ADR-012 §4）
+        cookOptions={mergeCookOptions(cookOptions, meal.cooks)}
         onChange={set}
         photos={
           <div className="field">
@@ -684,6 +701,7 @@ function Chevron({ back = false }: { back?: boolean }) {
 function MealDetailDialog({
   spaceId,
   meal,
+  cookOptions,
   openAt,
   editing,
   onEdit,
@@ -697,6 +715,7 @@ function MealDetailDialog({
 }: {
   spaceId: string;
   meal: Meal | null;
+  cookOptions: MealCook[];
   openAt: number;
   editing: boolean;
   onEdit: () => void;
@@ -768,6 +787,7 @@ function MealDetailDialog({
               <MealEditForm
                 spaceId={spaceId}
                 meal={meal}
+                cookOptions={cookOptions}
                 idPrefix={`detail-${meal.id}-`}
                 onCancelEdit={onCancelEdit}
                 onSaved={onSaved}
@@ -800,7 +820,12 @@ function MealDetailDialog({
                   </details>
                 )}
                 {meal.note && <p className="pre-wrap">{meal.note}</p>}
-                <p className="muted">{meal.createdByName} が記録</p>
+                <p className="muted">
+                  {formatCredit(meal.cooks, {
+                    userId: meal.createdBy,
+                    displayName: meal.createdByName,
+                  })}
+                </p>
                 <div className="row row--between">
                   <button
                     type="button"

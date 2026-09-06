@@ -5,7 +5,7 @@ import { enableVirtualAuthenticator } from "./helpers/webauthn";
 
 // 配線の事実: 初回登録（パスキー作成 → users/spaces/space_members/credentials/sessions）→
 // リロードでセッションが残る → 記録フォーム（dialog）を開いて投稿作成（meals/tags/meal_tags +
-// 写真 2 枚: 縮小 → R2 → proxy 配信・304）→ 写真から記録の詳細（送り・編集で写真 1 枚削除）→
+// meal_cooks（作った人）+ 写真 2 枚: 縮小 → R2 → proxy 配信・304）→ 写真から記録の詳細（送り・編集で写真 1 枚削除）→
 // 壁のセルからも同じ詳細 → またたべたいトグル →
 // リロードで投稿・トグル・写真が残る → サジェスト（料理名ごとの直近 1 件・タグ AND 絞り込み・
 // リンク 2 種と作り方メモの引き継ぎ）→ ホームの検索（♥ / タグ AND / 料理名の部分一致、URL に残る）→
@@ -43,6 +43,10 @@ test("register → reload → meal record with photos → suggestion → search 
   await expect(composer).toBeHidden();
   await openComposer();
   await composer.getByLabel("料理名").fill("肉じゃが");
+  // 作った人はスペースのメンバーの札（requirements 17 / ADR-012）。既定はどれも押されていない
+  const ownerChip = composer.getByRole("button", { name: "e2e-owner" });
+  await expect(ownerChip).toHaveAttribute("aria-pressed", "false");
+  await ownerChip.click();
   await composer.getByLabel("タグ").fill("じゃがいも 牛肉");
   // リンク 2 種と作り方メモは併記できる（排他をやめた 3 項目 — ADR-007 §1）
   await composer.getByRole("textbox", { name: "レシピ URL", exact: true }).fill("https://example.com/recipe/1");
@@ -59,6 +63,8 @@ test("register → reload → meal record with photos → suggestion → search 
   await expect(feed.getByText("肉じゃが", { exact: true })).toBeVisible();
   await expect(tagBadge("じゃがいも")).toBeVisible();
   await expect(tagBadge("牛肉")).toBeVisible();
+  // 作った人が記録した人と同じなら 1 度だけ言う（meal_cooks の行が書けている事実）
+  await expect(feed.getByText("e2e-owner が作って記録")).toBeVisible();
 
   // サムネ 2 枚が実際に描画された（proxy route がブラウザに解釈できるバイト列を返した事実）
   const thumbs = feed.locator("img[src*='/photos/']");
@@ -89,6 +95,7 @@ test("register → reload → meal record with photos → suggestion → search 
   await feed.getByRole("button", { name: "肉じゃが の写真 1 をひらく" }).click();
   const detail = page.getByRole("dialog", { name: "肉じゃが" });
   await expect(detail.getByText("1 / 2")).toBeVisible();
+  await expect(detail.getByText("e2e-owner が作って記録")).toBeVisible();
   await detail.getByRole("button", { name: "次の写真" }).click();
   await expect(detail.getByText("2 / 2")).toBeVisible();
   await detail.getByRole("button", { name: "編集" }).click();
@@ -118,6 +125,7 @@ test("register → reload → meal record with photos → suggestion → search 
   await showDetails();
   await expect(feed.getByText("肉じゃが", { exact: true })).toBeVisible();
   await expect(mataButton).toHaveAttribute("aria-pressed", "true");
+  await expect(feed.getByText("e2e-owner が作って記録")).toBeVisible();
   await expect(feed.locator("img[src*='/photos/']")).toHaveCount(1);
   // リンク 2 種と作り方メモも残る（recipe_url / shop_url は additive migration で足した列 — ADR-007 §2）
   await expect(feed.getByRole("link", { name: /^レシピ:/ })).toHaveAttribute(
@@ -254,6 +262,11 @@ test("register → reload → meal record with photos → suggestion → search 
   await expect(editForm.getByLabel("料理名")).toHaveValue("肉じゃが");
   await expect(editForm.getByLabel("タグ")).toHaveValue("じゃがいも 牛肉");
   await expect(editForm.getByLabel("作り方メモ")).toHaveValue("みりんを少し多めに");
+  // 作った人は選ばれたまま欄に写り、直さなければ保存で消えない（ADR-012 §4 の足し引き）
+  await expect(editForm.getByRole("button", { name: "e2e-owner" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await editForm.getByLabel("料理名").fill("肉じゃがリメイク");
   await editForm.getByLabel("タグ").fill("じゃがいも 玉ねぎ");
   await editForm.getByLabel("ひとことメモ").fill("翌日のほうがおいしい");
@@ -271,6 +284,7 @@ test("register → reload → meal record with photos → suggestion → search 
   await expect(feed.getByText("翌日のほうがおいしい")).toBeVisible();
   await expect(tagBadge("玉ねぎ")).toBeVisible();
   await expect(tagBadge("牛肉")).toHaveCount(0);
+  await expect(feed.getByText("e2e-owner が作って記録")).toBeVisible();
   await expect(feed.locator("img[src*='/photos/']")).toHaveCount(2);
   await expect(
     feed.getByRole("button", { name: /またたべたい\s*（肉じゃがリメイク）/ }),

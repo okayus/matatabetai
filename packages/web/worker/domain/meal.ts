@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { UserId } from "./auth";
 
 export type MealId = string & { readonly __brand: unique symbol };
 export const MealId = z.uuid().transform((v) => v as MealId);
@@ -132,6 +133,19 @@ export function uniqueTagNames(names: readonly TagName[]): TagName[] {
   return out;
 }
 
+// 作った人（requirements 17、ADR-012）。スペースのメンバーの user id を並べる。
+// 家族数人のスペースで全員を選んでも余る本数で足りる
+export const MAX_COOKS_PER_MEAL = 20;
+
+// 同じ人は 1 回だけ（UI は札のトグルなので起きないが、API は直に叩ける）。
+// 実在するメンバーかどうかはここでは決まらない — 型で表せないので SQL の INSERT … SELECT が
+// 境界で保証する（ADR-012 §3）
+const cookUserIdList = z
+  .array(UserId)
+  .max(MAX_COOKS_PER_MEAL)
+  .nullish()
+  .transform((list) => [...new Set(list ?? [])]);
+
 const nullableField = <S extends z.ZodType>(schema: S) =>
   schema.nullish().transform((v) => v ?? null);
 
@@ -147,6 +161,9 @@ export const MealContentInput = z
     recipeMemo: optionalText(5000),
     note: optionalText(1000),
     tags: z.array(TagName).max(20).default([]),
+    // 作った人は「この回の食事」のもの（誰が作ったかは回ごとに変わる）。またたべたい・写真と
+    // 違って内容の一部なので、この入力に入る = 編集で全置き換えの対象（ADR-012 §4）
+    cookUserIds: cookUserIdList,
   })
   // 上限は kind ごとではなく合計で数える（ADR-010 §2）。両方を上限まで埋めたときに
   // 取得の予算を超えないのが上限の意味なので、片方だけ見ても足りない

@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/d1";
-import { mealTags, meals, tags, users } from "../db/schema";
+import { mealCooks, mealTags, meals, tags, users } from "../db/schema";
 import type { MealLink } from "../domain/link-preview";
 import { likePattern, normalizeName, type MealLinks, type MealType } from "../domain/meal";
 import { linksByMealIds, urlsByMealIds } from "./links";
@@ -9,6 +9,11 @@ import { photosByMealIds, type MealPhotoSummary } from "./photos";
 type Db = ReturnType<typeof drizzle>;
 
 export type MealTagSummary = { id: string; name: string };
+
+// 作った人（requirements 17、ADR-012）。記録した人（createdBy / createdByName）とは別物で、
+// 0 人なら「作った人は記録していない」（外食や、聞きそびれた回）。スペースを抜けた人の行も
+// 残るので、名前は space_members ではなく users から引く
+export type MealCookSummary = { userId: string; displayName: string };
 
 // links は貼られた URL のぶんだけ、レシピ → お店・商品 の順に並ぶ（ADR-010 §1）。
 // 取得中・失敗も 1 要素として出る（プレーンリンクとして表示される — ADR-007 §5）。
@@ -23,6 +28,7 @@ export type MealSummary = {
   note: string | null;
   mataTabetai: boolean;
   tags: MealTagSummary[];
+  cooks: MealCookSummary[];
   photos: MealPhotoSummary[];
   links: MealLink[];
   createdBy: string;
@@ -59,19 +65,21 @@ const MEAL_COLUMNS = {
   updatedAt: meals.updatedAt,
 } as const;
 
-type MealRow = Omit<MealSummary, "tags" | "photos" | "links">;
+type MealRow = Omit<MealSummary, "tags" | "cooks" | "photos" | "links">;
 
-// タグ・写真・リンクを 1 往復ずつでまとめて足す（行ごとに引かない）
+// タグ・作った人・写真・リンクを 1 往復ずつでまとめて足す（行ごとに引かない）
 async function withRelations(db: Db, rows: MealRow[]): Promise<MealSummary[]> {
   const ids = rows.map((r) => r.id);
-  const [tagsByMeal, photosByMeal, linksByMeal] = await Promise.all([
+  const [tagsByMeal, cooksByMeal, photosByMeal, linksByMeal] = await Promise.all([
     loadMealTags(db, ids),
+    loadMealCooks(db, ids),
     photosByMealIds(db, ids),
     linksByMealIds(db, ids),
   ]);
   return rows.map((row) => ({
     ...row,
     tags: tagsByMeal.get(row.id) ?? [],
+    cooks: cooksByMeal.get(row.id) ?? [],
     photos: photosByMeal.get(row.id) ?? [],
     links: linksByMeal.get(row.id) ?? [],
   }));
@@ -129,6 +137,29 @@ async function loadMealTags(db: Db, mealIds: string[]): Promise<Map<string, Meal
   for (const { mealId, id, name } of rows) {
     const list = map.get(mealId) ?? [];
     list.push({ id, name });
+    map.set(mealId, list);
+  }
+  return map;
+}
+
+// 作った人。並びは表示名（同名は user id）で、SQLite の BINARY 照合 = クライアントの素の
+// 文字列比較と同じ順になる（cookOptionsFor が札を並べるのと同じ規則）。
+// space_members には join しない — 抜けた人の「作った」も残す（ADR-012 §2）
+export async function loadMealCooks(
+  db: Db,
+  mealIds: string[],
+): Promise<Map<string, MealCookSummary[]>> {
+  const map = new Map<string, MealCookSummary[]>();
+  if (mealIds.length === 0) return map;
+  const rows = await db
+    .select({ mealId: mealCooks.mealId, userId: users.id, displayName: users.displayName })
+    .from(mealCooks)
+    .innerJoin(users, eq(mealCooks.userId, users.id))
+    .where(inArray(mealCooks.mealId, mealIds))
+    .orderBy(users.displayName, users.id);
+  for (const { mealId, ...cook } of rows) {
+    const list = map.get(mealId) ?? [];
+    list.push(cook);
     map.set(mealId, list);
   }
   return map;

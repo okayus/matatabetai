@@ -191,6 +191,27 @@ export const mealPhotos = sqliteTable(
   (t) => [index("meal_photos_meal_id_idx").on(t.mealId)],
 );
 
+// 作った人（ADR-012）。「この料理を作ったのは誰か」を、記録した人（meals.created_by）とは別に持つ。
+// meal_tags と同じ結合行だけの表（固有の情報が無いので created_at も持たない）で、meals の
+// CASCADE 子。user_id は認可軸ではない（境界は meals.space_id）ので、meals.created_by と同じく
+// user 削除で記録を道連れにしない = cascade にしない。
+// 行を書くのはスペースのメンバーだけ（commands.ts の INSERT … SELECT が保証する）だが、
+// 書いた後にその人がスペースを抜けても行は残す — 誰が作ったかは過去の事実だから
+export const mealCooks = sqliteTable(
+  "meal_cooks",
+  {
+    mealId: text("meal_id")
+      .notNull()
+      .references(() => meals.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+  },
+  // 一覧は WHERE meal_id IN (…) なので PK の先頭列で引ける。user_id から meal を引く索引は
+  // 「作った人で絞り込む」を作るときに足す（CREATE INDEX は additive で rebuild にならない）
+  (t) => [primaryKey({ columns: [t.mealId, t.userId] })],
+);
+
 // レシピ / お店・商品 の URL（ADR-010）。1 投稿に複数本ぶら下がる meals の CASCADE 子で、
 // URL そのものと、投稿時点の OGP スナップショット（ADR-007 §3）を 1 行に持つ。
 // URL 1 本にカードはちょうど 1 枚なので、表は割らない。

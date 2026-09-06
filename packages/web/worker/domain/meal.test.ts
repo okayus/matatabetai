@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_COOKS_PER_MEAL,
   MAX_LINKS_PER_MEAL,
   MealContentInput,
   EatenOn,
@@ -141,6 +142,7 @@ describe("MealContentInput", () => {
     recipeMemo: null,
     note: null,
     tags: [],
+    cookUserIds: [],
   };
   it("最小の投稿が通り、省略可能な列は null になる", () => {
     const r = MealContentInput.safeParse({ name: "肉じゃが", eatenOn: "2026-09-01" });
@@ -152,7 +154,37 @@ describe("MealContentInput", () => {
       expect(r.data.recipeMemo).toBeNull();
       expect(r.data.note).toBeNull();
       expect(r.data.tags).toEqual([]);
+      // 作った人は既定で「記録しない」。自分を既定で入れない（ADR-012 §6）
+      expect(r.data.cookUserIds).toEqual([]);
     }
+  });
+  it("作った人は user id の並び。同じ人を 2 回選んでも 1 回に畳む", () => {
+    const r = MealContentInput.safeParse({
+      ...base,
+      cookUserIds: [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+        "11111111-1111-4111-8111-111111111111",
+      ],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.cookUserIds).toEqual([
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+      ]);
+    }
+  });
+  it("作った人が user id の形をしていなければ拒む（実在とメンバーかどうかは SQL 側 — ADR-012 §3）", () => {
+    expect(MealContentInput.safeParse({ ...base, cookUserIds: ["u1"] }).success).toBe(false);
+  });
+  it(`作った人は ${MAX_COOKS_PER_MEAL} 人まで`, () => {
+    const ids = (n: number) =>
+      Array.from({ length: n }, (_, i) => `11111111-1111-4111-8111-${String(i).padStart(12, "0")}`);
+    expect(MealContentInput.safeParse({ ...base, cookUserIds: ids(MAX_COOKS_PER_MEAL) }).success).toBe(true);
+    expect(
+      MealContentInput.safeParse({ ...base, cookUserIds: ids(MAX_COOKS_PER_MEAL + 1) }).success,
+    ).toBe(false);
   });
   it("空文字の note は null になる", () => {
     const r = MealContentInput.safeParse({ ...base, note: "  " });

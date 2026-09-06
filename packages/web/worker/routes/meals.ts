@@ -90,6 +90,8 @@ export const mealRoutes = new Hono<SpaceEnv>()
       note: parsed.value.note,
       mataTabetai: false,
       tags: created.tags,
+      // 書けた行を返す（メンバーでない user id は SQL が落としているので、入力の写しにしない）
+      cooks: created.cooks,
       photos: [],
       // 立てた行をそのまま返す（並びは plannedLinks が決めた レシピ → お店・商品 の順）。
       // この時点ではどれも取得中で、カードは次に一覧を読んだときに出る

@@ -25,6 +25,7 @@ const filled: MealFormState = {
   shopUrls: [""],
   recipeMemo: "",
   note: " おかわりした ",
+  cookUserIds: [],
 };
 
 const suggestion = (over: Partial<MealSuggestion> = {}): MealSuggestion => ({
@@ -49,6 +50,7 @@ const meal = (over: Partial<Meal> = {}): Meal => ({
   note: null,
   mataTabetai: true,
   tags: [],
+  cooks: [],
   photos: [],
   links: [],
   createdBy: "u1",
@@ -178,11 +180,13 @@ describe("applySuggestion", () => {
     expect(form.recipeMemo).toBe("みりん多め");
   });
 
-  it("食べた日・タイミング・メモは今回の食事のものなので引き継がない", () => {
-    const form = applySuggestion(filled, suggestion());
+  it("食べた日・タイミング・メモ・作った人は今回の食事のものなので引き継がない", () => {
+    const form = applySuggestion({ ...filled, cookUserIds: ["u2"] }, suggestion());
     expect(form.eatenOn).toBe("2026-09-02");
     expect(form.mealType).toBe("dinner");
     expect(form.note).toBe(" おかわりした ");
+    // 同じ料理でも作る人は回ごとに変わる（ADR-012 §5）。いま選んである人はそのまま
+    expect(form.cookUserIds).toEqual(["u2"]);
   });
 
   it("リンクの無い料理を選んだら、前の料理の書きかけは残さない（3 項目とも空になる）", () => {
@@ -231,6 +235,7 @@ describe("mealFormFrom", () => {
             { id: "t1", name: "じゃがいも" },
             { id: "t2", name: "牛肉" },
           ],
+          cooks: [{ userId: "u2", displayName: "みか" }],
         }),
       ),
     ).toEqual({
@@ -242,6 +247,7 @@ describe("mealFormFrom", () => {
       shopUrls: ["https://shop.example.com/item"],
       recipeMemo: "みりん多め",
       note: "おかわりした",
+      cookUserIds: ["u2"],
     });
   });
 
@@ -253,6 +259,7 @@ describe("mealFormFrom", () => {
     expect(form.recipeMemo).toBe("");
     expect(form.note).toBe("");
     expect(form.tags).toBe("");
+    expect(form.cookUserIds).toEqual([]);
   });
 
   it("そのまま保存しても記録は変わらない（欄 → body の往復で値が落ちない）", () => {
@@ -263,6 +270,7 @@ describe("mealFormFrom", () => {
       ],
       recipeMemo: "みりん多め",
       tags: [{ id: "t1", name: "じゃがいも" }],
+      cooks: [{ userId: "u2", displayName: "みか" }],
     });
     expect(toMealContentBody(mealFormFrom(original))).toEqual({
       name: "肉じゃが",
@@ -273,6 +281,7 @@ describe("mealFormFrom", () => {
       recipeMemo: "みりん多め",
       note: "おかわりした",
       tags: ["じゃがいも"],
+      cookUserIds: ["u2"],
     });
   });
 });
