@@ -372,51 +372,42 @@ function MealEditForm({
   );
 }
 
-// 欄の並びと見出しはフォームと同じ（レシピ → お店・商品）
-const LINK_KINDS = [
-  { kind: "recipe", label: "レシピ", urlOf: (m: Meal) => m.recipeUrl },
-  { kind: "shop", label: "お店・商品", urlOf: (m: Meal) => m.shopUrl },
-] as const satisfies readonly {
-  kind: LinkPreviewKind;
-  label: string;
-  urlOf: (m: Meal) => string | null;
-}[];
+// 見出しはフォームと同じ言葉。並び（レシピ → お店・商品、その中は入力順）はサーバーが決める
+const LINK_KIND_LABEL: Record<LinkPreviewKind, string> = {
+  recipe: "レシピ",
+  shop: "お店・商品",
+};
 
 // URL は常にリンクとして働き、投稿時のスナップショットが取れていた（ok）ときだけ
 // その上にカードを重ねる。取得中・失敗・行なしは同じ見え方なので、取得が途中で死んでも
-// 表示は壊れない（ADR-007 §5）。カードは投稿時点の姿で、表示時に外部へは出ない
+// 表示は壊れない（ADR-007 §5）。カードは投稿時点の姿で、表示時に外部へは出ない。
+// 1 投稿に複数本あるので（ADR-010）、同じ種類のカードが続けて並ぶこともある
 function MealLinkList({ spaceId, meal }: { spaceId: string; meal: Meal }) {
-  const links = LINK_KINDS.flatMap(({ kind, label, urlOf }) => {
-    const url = urlOf(meal);
-    return url === null
-      ? []
-      : [{ kind, label, url, preview: meal.previews.find((p) => p.kind === kind) ?? null }];
-  });
-  if (links.length === 0) return null;
+  if (meal.links.length === 0) return null;
   return (
     <ul className="link-list" role="list">
-      {links.map(({ kind, label, url, preview }) => (
-        <li key={kind}>
-          {preview?.status === "ok" ? (
+      {meal.links.map(({ id, kind, url, preview }) => (
+        <li key={id}>
+          {preview.status === "ok" ? (
             <a className="link-card" href={url} target="_blank" rel="noreferrer">
               {preview.hasImage && (
                 <img
                   className="link-card__media"
-                  src={linkPreviewImageUrl(spaceId, meal.id, kind)}
+                  src={linkPreviewImageUrl(spaceId, meal.id, id)}
                   alt=""
                   loading="lazy"
                   decoding="async"
                 />
               )}
               <span className="link-card__body">
-                <span className="badge">{label}</span>
+                <span className="badge">{LINK_KIND_LABEL[kind]}</span>
                 <span className="link-card__title">{preview.title}</span>
                 <span className="link-card__site">{preview.siteName ?? linkLabel(url)}</span>
               </span>
             </a>
           ) : (
             <a href={url} target="_blank" rel="noreferrer">
-              {label}: {linkLabel(url)}
+              {LINK_KIND_LABEL[kind]}: {linkLabel(url)}
             </a>
           )}
         </li>

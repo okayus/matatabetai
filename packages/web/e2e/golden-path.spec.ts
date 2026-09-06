@@ -44,8 +44,8 @@ test("register → reload → meal record with photos → suggestion → search 
   await composer.getByLabel("料理名").fill("肉じゃが");
   await composer.getByLabel("タグ").fill("じゃがいも 牛肉");
   // リンク 2 種と作り方メモは併記できる（排他をやめた 3 項目 — ADR-007 §1）
-  await composer.getByLabel("レシピ URL").fill("https://example.com/recipe/1");
-  await composer.getByLabel("お店・商品 URL").fill("https://shop.example.com/item/1");
+  await composer.getByRole("textbox", { name: "レシピ URL", exact: true }).fill("https://example.com/recipe/1");
+  await composer.getByRole("textbox", { name: "お店・商品 URL", exact: true }).fill("https://shop.example.com/item/1");
   await composer.getByLabel("作り方メモ").fill("みりんを少し多めに");
   await composer.getByLabel("写真", { exact: true }).setInputFiles([
     { name: "one.png", mimeType: "image/png", buffer: PNG_8x8 },
@@ -140,8 +140,8 @@ test("register → reload → meal record with photos → suggestion → search 
   await nikujaga.click();
   await expect(composer.getByLabel("料理名")).toHaveValue("肉じゃが");
   await expect(composer.getByLabel("タグ")).toHaveValue("じゃがいも 牛肉");
-  await expect(composer.getByLabel("レシピ URL")).toHaveValue("https://example.com/recipe/1");
-  await expect(composer.getByLabel("お店・商品 URL")).toHaveValue("https://shop.example.com/item/1");
+  await expect(composer.getByRole("textbox", { name: "レシピ URL", exact: true })).toHaveValue("https://example.com/recipe/1");
+  await expect(composer.getByRole("textbox", { name: "お店・商品 URL", exact: true })).toHaveValue("https://shop.example.com/item/1");
   await expect(composer.getByLabel("作り方メモ")).toHaveValue("みりんを少し多めに");
   await expect(composer.getByText(/「肉じゃが」の前回の内容を引き継ぎました/)).toBeVisible();
   // 送らずに閉じても入力は残る（開き直せば続きから）。焦点は開いたボタンへ戻る

@@ -72,21 +72,41 @@ const optionalText = (max: number) =>
     .nullish()
     .transform((v) => (v ? v : null));
 
-// 任意の URL 欄。値があるときだけ http(s) を要求する
-const optionalUrl = z
-  .string()
-  .trim()
-  .max(2048)
-  .nullish()
-  .transform((v) => (v ? v : null))
-  .refine((v) => v === null || isHttpUrl(v), "http(s) の URL を指定してください");
+// 1 投稿に貼れる URL の本数（レシピ + お店・商品 の合計 — ADR-010 §2）。
+// Workers Free の外部 subrequest は 50 / invocation で、1 本の取得は最悪 8
+// （ページ + リダイレクト 3 hop + og:image）。6 本なら予算に収まる
+export const MAX_LINKS_PER_MEAL = 6;
 
-// レシピ URL / お店・商品 URL / 作り方メモ は独立した任意の 3 項目（ADR-007 §1）。
-// 排他ではないので DU にしない — 「レシピを見つつ自分のアレンジも書く」が実際の記録の形。
+// URL 欄の並び。空欄（フォームは常に空の 1 行を残す）は落とし、同じ URL は 1 本に畳む。
+// http(s) 以外を弾くのは UI に <a href> で出すため（javascript: 等を型の段階で落とす）
+const urlList = z
+  .array(z.string().trim().max(2048))
+  .max(MAX_LINKS_PER_MEAL)
+  .nullish()
+  .transform((list) => uniqueUrls(list ?? []))
+  .refine((list) => list.every(isHttpUrl), "http(s) の URL を指定してください");
+
+// 同じ kind の中の重複を落とす（同じページを 2 回取りに行き、同じカードを 2 枚並べる意味がない）。
+// 表記が 1 文字でも違えば別の URL として扱う — 正規化して同一視すると、貼った文字列と
+// 表示が食い違う（ADR-010 §5）
+export function uniqueUrls(urls: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const url of urls) {
+    if (url === "" || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
+}
+
+// レシピ URL（複数）/ お店・商品 URL（複数）/ 作り方メモ は独立した任意の 3 項目
+// （ADR-007 §1、複数化は ADR-010 §1）。排他ではないので DU にしない —
+// 「レシピを見つつ自分のアレンジも書く」が実際の記録の形。
 // note（その回のエピソード）は 3 項目とは別物で、サジェストの引き継ぎ対象にも入らない
 export type MealLinks = {
-  recipeUrl: string | null;
-  shopUrl: string | null;
+  recipeUrls: string[];
+  shopUrls: string[];
   recipeMemo: string | null;
 };
 
@@ -117,16 +137,23 @@ const nullableField = <S extends z.ZodType>(schema: S) =>
 
 // 記録の内容そのもの。作成と編集で同じ入力を使う（編集は部分更新ではなく全置き換え — ADR-008 §1）。
 // またたべたい（家族の反応）と写真（子リソース）はこの外側にあり、この型には入らない
-export const MealContentInput = z.object({
-  name: MealName,
-  eatenOn: EatenOn,
-  mealType: nullableField(MealType),
-  recipeUrl: optionalUrl,
-  shopUrl: optionalUrl,
-  recipeMemo: optionalText(5000),
-  note: optionalText(1000),
-  tags: z.array(TagName).max(20).default([]),
-});
+export const MealContentInput = z
+  .object({
+    name: MealName,
+    eatenOn: EatenOn,
+    mealType: nullableField(MealType),
+    recipeUrls: urlList,
+    shopUrls: urlList,
+    recipeMemo: optionalText(5000),
+    note: optionalText(1000),
+    tags: z.array(TagName).max(20).default([]),
+  })
+  // 上限は kind ごとではなく合計で数える（ADR-010 §2）。両方を上限まで埋めたときに
+  // 取得の予算を超えないのが上限の意味なので、片方だけ見ても足りない
+  .refine((v) => v.recipeUrls.length + v.shopUrls.length <= MAX_LINKS_PER_MEAL, {
+    error: `URL はレシピとお店・商品を合わせて ${MAX_LINKS_PER_MEAL} 本までです`,
+    path: ["recipeUrls"],
+  });
 export type MealContentInput = z.output<typeof MealContentInput>;
 
 export const UpdateMataTabetaiInput = z.object({ mataTabetai: z.boolean() });

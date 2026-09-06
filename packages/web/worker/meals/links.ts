@@ -1,18 +1,19 @@
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/d1";
-import { mealLinkPreviews, meals } from "../db/schema";
+import { mealLinks, meals } from "../db/schema";
 import {
   absoluteHttpUrl,
   linkPreviewImageKey,
-  sortByKind,
-  toLinkPreview,
+  sortLinks,
+  toMealLink,
   toSnapshot,
-  type LinkPreview,
-  type LinkPreviewKind,
   type LinkPreviewSnapshot,
   type LinkPreviewTarget,
+  type MealLink,
+  type NewLink,
   type OgpCandidates,
-  type SavedLinkPreview,
+  type PlannedLink,
+  type SavedLink,
 } from "../domain/link-preview";
 import type { MealId } from "../domain/meal";
 import { isAllowedImageType, sniffImageType } from "../domain/photo";
@@ -34,123 +35,168 @@ const OG_PROPERTIES = new Set(["og:title", "og:description", "og:site_name", "og
 // <title> は見出しの候補にしかならないので、切り詰める前でもこの長さで読むのをやめる
 const MAX_TITLE_SOURCE_CHARS = 500;
 
-// 投稿の INSERT と同じ batch に混ぜる文（ADR-007 §4）。meal と一緒に原子的に pending 行ができる
-export function pendingPreviewStatements(
+// 投稿の INSERT と同じ batch に混ぜる文（ADR-007 §4）。meal と一緒に原子的に pending 行ができる。
+// 行の id はここで採る（純粋な計画には無い — ADR-010 §4）ので、取りに行く先も一緒に返す
+export function addedLinkStatements(
   d1: D1Database,
   mealId: string,
-  targets: readonly LinkPreviewTarget[],
+  added: readonly PlannedLink[],
   now: string,
-): D1PreparedStatement[] {
-  return targets.map((t) =>
-    d1
-      .prepare(
-        "INSERT INTO meal_link_previews (meal_id, kind, url, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
-      )
-      .bind(mealId, t.kind, t.url, now),
-  );
+): { statements: D1PreparedStatement[]; rows: NewLink[] } {
+  const rows: NewLink[] = added.map((link) => ({ ...link, id: crypto.randomUUID() }));
+  return {
+    statements: rows.map((row) =>
+      d1
+        .prepare(
+          "INSERT INTO meal_links (id, meal_id, kind, position, url, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+        )
+        .bind(row.id, mealId, row.kind, row.position, row.url, now),
+    ),
+    rows,
+  };
 }
 
-// 編集で「同じ URL か」を判定するための保存済みの行（ADR-008 §5）。
+// 立てた行 → 取りに行く先（waitUntil に渡す分）
+export function fetchTargets(rows: readonly NewLink[]): LinkPreviewTarget[] {
+  return rows.map((row) => ({ id: row.id, url: row.url }));
+}
+
+// 編集で足し引きを決めるための保存済みの行（ADR-008 §5）。
 // 他の meal 参照と同じく meals と join して space_id まで一致した時だけ見る
-export async function savedPreviewsOfMeal(
+export async function savedLinksOfMeal(
   db: Db,
   spaceId: SpaceId,
   mealId: MealId,
-): Promise<SavedLinkPreview[]> {
+): Promise<SavedLink[]> {
   return await db
     .select({
-      kind: mealLinkPreviews.kind,
-      url: mealLinkPreviews.url,
-      imageR2Key: mealLinkPreviews.imageR2Key,
+      id: mealLinks.id,
+      kind: mealLinks.kind,
+      url: mealLinks.url,
+      position: mealLinks.position,
+      imageR2Key: mealLinks.imageR2Key,
     })
-    .from(mealLinkPreviews)
-    .innerJoin(meals, eq(mealLinkPreviews.mealId, meals.id))
-    .where(and(eq(mealLinkPreviews.mealId, mealId), eq(meals.spaceId, spaceId)));
+    .from(mealLinks)
+    .innerJoin(meals, eq(mealLinks.mealId, meals.id))
+    .where(and(eq(mealLinks.mealId, mealId), eq(meals.spaceId, spaceId)));
 }
 
-// 捨てる行（URL が変わった / 消えた kind）。R2 の画像は呼び出し側が先に消す（ADR-004 §6）
-export function stalePreviewStatements(
+// 捨てる行（入力から URL が消えた）。R2 の画像は呼び出し側が先に消す（ADR-004 §6）
+export function removedLinkStatements(
   d1: D1Database,
   mealId: string,
-  kinds: readonly LinkPreviewKind[],
+  ids: readonly string[],
 ): D1PreparedStatement[] {
-  return kinds.map((kind) =>
-    d1.prepare("DELETE FROM meal_link_previews WHERE meal_id = ? AND kind = ?").bind(mealId, kind),
+  return ids.map((id) =>
+    d1.prepare("DELETE FROM meal_links WHERE id = ? AND meal_id = ?").bind(id, mealId),
+  );
+}
+
+// URL は同じで並びだけ変わった行。カード（スナップショット）は触らない
+export function repositionedLinkStatements(
+  d1: D1Database,
+  mealId: string,
+  moves: readonly { id: string; position: number }[],
+): D1PreparedStatement[] {
+  return moves.map((move) =>
+    d1
+      .prepare("UPDATE meal_links SET position = ? WHERE id = ? AND meal_id = ?")
+      .bind(move.position, move.id, mealId),
   );
 }
 
 // 一覧用。meal は呼び出し側が space で絞った id 群なので join は不要（photosByMealIds と同じ）
-export async function previewsByMealIds(
+export async function linksByMealIds(
   db: Db,
   mealIds: string[],
-): Promise<Map<string, LinkPreview[]>> {
-  const map = new Map<string, LinkPreview[]>();
+): Promise<Map<string, MealLink[]>> {
+  const map = new Map<string, MealLink[]>();
   if (mealIds.length === 0) return map;
   const rows = await db
     .select({
-      mealId: mealLinkPreviews.mealId,
-      kind: mealLinkPreviews.kind,
-      status: mealLinkPreviews.status,
-      title: mealLinkPreviews.title,
-      description: mealLinkPreviews.description,
-      siteName: mealLinkPreviews.siteName,
-      imageR2Key: mealLinkPreviews.imageR2Key,
+      mealId: mealLinks.mealId,
+      id: mealLinks.id,
+      kind: mealLinks.kind,
+      url: mealLinks.url,
+      position: mealLinks.position,
+      status: mealLinks.status,
+      title: mealLinks.title,
+      description: mealLinks.description,
+      siteName: mealLinks.siteName,
+      imageR2Key: mealLinks.imageR2Key,
     })
-    .from(mealLinkPreviews)
-    .where(inArray(mealLinkPreviews.mealId, mealIds));
-  for (const { mealId, ...row } of rows) {
+    .from(mealLinks)
+    .where(inArray(mealLinks.mealId, mealIds));
+  // 並びは kind → position。DB の返す順に頼らず、ドメインの並び順で確定させる
+  for (const { mealId, ...row } of sortLinks(rows)) {
     const list = map.get(mealId) ?? [];
-    list.push(toLinkPreview(row));
+    list.push(toMealLink(row));
     map.set(mealId, list);
   }
-  for (const list of map.values()) sortByKind(list);
+  return map;
+}
+
+// サジェスト用。前回の投稿のリンクを kind ごとの URL 配列（= フォームの形）にして返す
+export async function urlsByMealIds(
+  db: Db,
+  mealIds: string[],
+): Promise<Map<string, { recipeUrls: string[]; shopUrls: string[] }>> {
+  const map = new Map<string, { recipeUrls: string[]; shopUrls: string[] }>();
+  if (mealIds.length === 0) return map;
+  const rows = await db
+    .select({
+      mealId: mealLinks.mealId,
+      kind: mealLinks.kind,
+      url: mealLinks.url,
+      position: mealLinks.position,
+    })
+    .from(mealLinks)
+    .where(inArray(mealLinks.mealId, mealIds));
+  for (const row of sortLinks(rows)) {
+    const entry = map.get(row.mealId) ?? { recipeUrls: [], shopUrls: [] };
+    (row.kind === "recipe" ? entry.recipeUrls : entry.shopUrls).push(row.url);
+    map.set(row.mealId, entry);
+  }
   return map;
 }
 
 // 画像を配る route の認可。meals と join して space_id まで一致した時だけキーを返す
-export async function linkPreviewImageKeyOf(
+export async function linkImageKeyOf(
   db: Db,
   spaceId: SpaceId,
   mealId: MealId,
-  kind: LinkPreviewKind,
+  linkId: string,
 ): Promise<string | null> {
   const rows = await db
-    .select({ imageR2Key: mealLinkPreviews.imageR2Key })
-    .from(mealLinkPreviews)
-    .innerJoin(meals, eq(mealLinkPreviews.mealId, meals.id))
+    .select({ imageR2Key: mealLinks.imageR2Key })
+    .from(mealLinks)
+    .innerJoin(meals, eq(mealLinks.mealId, meals.id))
     .where(
-      and(
-        eq(mealLinkPreviews.mealId, mealId),
-        eq(mealLinkPreviews.kind, kind),
-        eq(meals.spaceId, spaceId),
-      ),
+      and(eq(mealLinks.id, linkId), eq(mealLinks.mealId, mealId), eq(meals.spaceId, spaceId)),
     );
   return rows[0]?.imageR2Key ?? null;
 }
 
 // 親 meal 削除用（行は CASCADE で消えるので R2 だけがこちらの責務 — photoKeysOfMeal と同じ）
-export async function linkPreviewImageKeysOfMeal(
+export async function linkImageKeysOfMeal(
   db: Db,
   spaceId: SpaceId,
   mealId: MealId,
 ): Promise<string[]> {
   const rows = await db
-    .select({ imageR2Key: mealLinkPreviews.imageR2Key })
-    .from(mealLinkPreviews)
-    .innerJoin(meals, eq(mealLinkPreviews.mealId, meals.id))
+    .select({ imageR2Key: mealLinks.imageR2Key })
+    .from(mealLinks)
+    .innerJoin(meals, eq(mealLinks.mealId, meals.id))
     .where(
-      and(
-        eq(meals.id, mealId),
-        eq(meals.spaceId, spaceId),
-        isNotNull(mealLinkPreviews.imageR2Key),
-      ),
+      and(eq(meals.id, mealId), eq(meals.spaceId, spaceId), isNotNull(mealLinks.imageR2Key)),
     );
   return rows.flatMap((r) => (r.imageR2Key === null ? [] : [r.imageR2Key]));
 }
 
 // --- 取得（ここから下が外向きの IO） --------------------------------------------------------
 
-// 投稿のレスポンス後に走る本体。1 本が転んでも他方は独立に完了する
+// 投稿のレスポンス後に走る本体。1 本が転んでも他は独立に完了する。
+// 本数は MAX_LINKS_PER_MEAL（6）で抑えてあるので、並列でも subrequest 予算に収まる（ADR-010 §2）
 export async function runLinkPreviewJobs(
   d1: D1Database,
   bucket: R2Bucket,
@@ -173,15 +219,15 @@ async function runOne(
   // object だけが残る形は下の compensating delete で消せる
   let imageKey: string | null = null;
   if (snapshot !== null && snapshot.imageUrl !== null) {
-    const key = linkPreviewImageKey(spaceId, mealId, target.kind, crypto.randomUUID());
+    const key = linkPreviewImageKey(spaceId, mealId, target.id);
     if (await storeImage(bucket, key, snapshot.imageUrl)) imageKey = key;
   }
 
-  // url も条件に入れる（ADR-008 §6）。取得中に投稿が編集されて URL が変わっていたら、
-  // この結果は「別の URL の姿」なので書かない
+  // 行は不変なので id だけで名指しできる（URL が貼り替わった編集は、この行を消して
+  // 別 id の行を立てる — ADR-010 §1）。消えていれば changes = 0 で何も書かない
   const written = await d1
     .prepare(
-      "UPDATE meal_link_previews SET status = ?, title = ?, description = ?, site_name = ?, image_r2_key = ?, fetched_at = ? WHERE meal_id = ? AND kind = ? AND url = ?",
+      "UPDATE meal_links SET status = ?, title = ?, description = ?, site_name = ?, image_r2_key = ?, fetched_at = ? WHERE id = ? AND meal_id = ?",
     )
     .bind(
       snapshot === null ? "failed" : "ok",
@@ -190,13 +236,11 @@ async function runOne(
       snapshot?.siteName ?? null,
       imageKey,
       new Date().toISOString(),
+      target.id,
       mealId,
-      target.kind,
-      target.url,
     )
     .run();
   // 取得中に投稿が消えた / URL が貼り替わった。置いたばかりの画像は誰も参照しないので消す
-  // （キーは取得ごとに固有なので、後から走ったジョブの画像を消す心配はない）
   if (written.meta.changes === 0 && imageKey !== null) await bucket.delete(imageKey);
 }
 

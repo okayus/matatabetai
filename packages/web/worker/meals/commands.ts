@@ -2,9 +2,11 @@ import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { meals, tags } from "../db/schema";
 import {
-  linkPreviewTargets,
-  planLinkPreviews,
+  pendingMealLink,
+  planLinks,
+  plannedLinks,
   type LinkPreviewTarget,
+  type MealLink,
 } from "../domain/link-preview";
 import {
   frozenRecipeColumns,
@@ -16,15 +18,17 @@ import {
 import type { UserId } from "../domain/auth";
 import type { SpaceId } from "../domain/space";
 import {
-  linkPreviewImageKeysOfMeal,
-  pendingPreviewStatements,
-  savedPreviewsOfMeal,
-  stalePreviewStatements,
-} from "./link-previews";
+  addedLinkStatements,
+  fetchTargets,
+  linkImageKeysOfMeal,
+  removedLinkStatements,
+  repositionedLinkStatements,
+  savedLinksOfMeal,
+} from "./links";
 import { mealExists, photoKeysOfMeal } from "./photos";
 import type { MealTagSummary } from "./queries";
 
-// タグの upsert → meal → meal_tags → プレビューの pending 行 を 1 つの batch（原子的）で書く。
+// タグの upsert → meal → meal_tags → リンクの pending 行 を 1 つの batch（原子的）で書く。
 // tag id の解決は INSERT … SELECT で SQL 側に閉じ、同名タグの同時投稿は ON CONFLICT DO NOTHING が
 // 吸収する。プレビューの取得そのものは応答後（waitUntil）で、ここでは行を立てるだけ（ADR-007 §4）
 export async function createMeal(
@@ -33,10 +37,15 @@ export async function createMeal(
   userId: UserId,
   input: MealContentInput,
   now: string,
-): Promise<{ id: string; tags: MealTagSummary[]; previewTargets: LinkPreviewTarget[] }> {
+): Promise<{
+  id: string;
+  tags: MealTagSummary[];
+  links: MealLink[];
+  previewTargets: LinkPreviewTarget[];
+}> {
   const id = crypto.randomUUID();
   const tagNames = uniqueTagNames(input.tags);
-  const previewTargets = linkPreviewTargets(input);
+  const links = addedLinkStatements(d1, id, plannedLinks(input), now);
   // recipe_source_type / url は凍結列。3 項目とは別に、旧 CHECK を満たす値を導出して書く
   const frozen = frozenRecipeColumns(input.recipeMemo);
   await d1.batch([
@@ -44,7 +53,7 @@ export async function createMeal(
     // またたべたい は投稿後のトグルで付ける（作成時は常に 0）
     d1
       .prepare(
-        "INSERT INTO meals (id, space_id, name, name_normalized, eaten_on, meal_type, recipe_source_type, url, recipe_url, shop_url, recipe_text, note, mata_tabetai, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+        "INSERT INTO meals (id, space_id, name, name_normalized, eaten_on, meal_type, recipe_source_type, url, recipe_text, note, mata_tabetai, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
       )
       .bind(
         id,
@@ -55,8 +64,6 @@ export async function createMeal(
         input.mealType,
         frozen.recipeSourceType,
         frozen.url,
-        input.recipeUrl,
-        input.shopUrl,
         input.recipeMemo,
         input.note,
         userId,
@@ -64,9 +71,14 @@ export async function createMeal(
         now,
       ),
     ...mealTagStatements(d1, spaceId, id, tagNames),
-    ...pendingPreviewStatements(d1, id, previewTargets, now),
+    ...links.statements,
   ]);
-  return { id, tags: await resolveTags(d1, spaceId, tagNames), previewTargets };
+  return {
+    id,
+    tags: await resolveTags(d1, spaceId, tagNames),
+    links: links.rows.map(pendingMealLink),
+    previewTargets: fetchTargets(links.rows),
+  };
 }
 
 // タグ名は space 単位で一意。同名タグの同時投稿は ON CONFLICT DO NOTHING が吸収する
@@ -116,12 +128,13 @@ export async function updateMeal(
   const db = drizzle(d1);
   const [exists, saved] = await Promise.all([
     mealExists(db, spaceId, mealId),
-    savedPreviewsOfMeal(db, spaceId, mealId),
+    savedLinksOfMeal(db, spaceId, mealId),
   ]);
   if (!exists) return null;
 
   const tagNames = uniqueTagNames(input.tags);
-  const plan = planLinkPreviews(saved, input);
+  const plan = planLinks(saved, input);
+  const added = addedLinkStatements(d1, mealId, plan.added, now);
   // 凍結列は書き込みのたびに導出する（ADR-007 §2）。作り方メモを消す編集で
   // recipe_source_type = 'text' のまま残すと CHECK 違反で落ちる
   const frozen = frozenRecipeColumns(input.recipeMemo);
@@ -131,7 +144,7 @@ export async function updateMeal(
     ...tagUpsertStatements(d1, spaceId, tagNames, now),
     d1
       .prepare(
-        "UPDATE meals SET name = ?, name_normalized = ?, eaten_on = ?, meal_type = ?, recipe_source_type = ?, url = ?, recipe_url = ?, shop_url = ?, recipe_text = ?, note = ?, updated_at = ? WHERE id = ? AND space_id = ?",
+        "UPDATE meals SET name = ?, name_normalized = ?, eaten_on = ?, meal_type = ?, recipe_source_type = ?, url = ?, recipe_text = ?, note = ?, updated_at = ? WHERE id = ? AND space_id = ?",
       )
       .bind(
         input.name,
@@ -140,8 +153,6 @@ export async function updateMeal(
         input.mealType,
         frozen.recipeSourceType,
         frozen.url,
-        input.recipeUrl,
-        input.shopUrl,
         input.recipeMemo,
         input.note,
         now,
@@ -151,10 +162,11 @@ export async function updateMeal(
     // meal_tags は結合行だけで固有の情報を持たないので、差分を取らず張り替える（ADR-008 §3）
     d1.prepare("DELETE FROM meal_tags WHERE meal_id = ?").bind(mealId),
     ...mealTagStatements(d1, spaceId, mealId, tagNames),
-    ...stalePreviewStatements(d1, mealId, plan.staleKinds),
-    ...pendingPreviewStatements(d1, mealId, plan.targets, now),
+    ...removedLinkStatements(d1, mealId, plan.removedIds),
+    ...repositionedLinkStatements(d1, mealId, plan.repositioned),
+    ...added.statements,
   ]);
-  return plan.targets;
+  return fetchTargets(added.rows);
 }
 
 // レスポンス用に入力順のまま id を引き直す
@@ -188,7 +200,7 @@ export async function setMataTabetai(
   return updated.length > 0;
 }
 
-// meal_tags / meal_photos / meal_link_previews の行は CASCADE で消える。tags はサジェストのために残す。
+// meal_tags / meal_photos / meal_links の行は CASCADE で消える。tags はサジェストのために残す。
 // R2 object は CASCADE では消えないので、先に key を集めて配列 1 回で消す（写真も og:image も同じ
 // bucket。R2 が先: 逆順だと一時的な R2 障害が消せない orphan object になる。
 // skill cloudflare-r2-private-image-upload）
@@ -201,7 +213,7 @@ export async function deleteMeal(
   const db = drizzle(d1);
   const [photoKeys, previewKeys] = await Promise.all([
     photoKeysOfMeal(db, spaceId, mealId),
-    linkPreviewImageKeysOfMeal(db, spaceId, mealId),
+    linkImageKeysOfMeal(db, spaceId, mealId),
   ]);
   const keys = [...photoKeys, ...previewKeys];
   if (keys.length > 0) await bucket.delete(keys);

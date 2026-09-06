@@ -7,9 +7,10 @@ export type MealFormState = {
   eatenOn: string;
   mealType: string;
   tags: string;
-  // 独立した 3 項目（併用可 — ADR-007 §1）。空文字は「なし」で、送信直前に null へ畳む
-  recipeUrl: string;
-  shopUrl: string;
+  // 独立した 3 項目（併用可 — ADR-007 §1）。URL は複数貼れる（ADR-010 §1）ので欄の並びを持つ。
+  // 空欄は「なし」で、送信直前に落とす（サーバーも同じ規則で畳む）
+  recipeUrls: string[];
+  shopUrls: string[];
   recipeMemo: string;
   note: string;
 };
@@ -28,18 +29,46 @@ export function toMealType(value: string): MealType | null {
   return MEAL_TYPES.find((t) => t === value) ?? null;
 }
 
+// URL 欄は常に 1 行以上ある — 0 行だと「追加」を押さないと 1 本目が入れられない（ADR-010 §6）
+export function urlRows(urls: readonly string[]): string[] {
+  return urls.length === 0 ? [""] : [...urls];
+}
+
 export function emptyMealForm(today: string): MealFormState {
   return {
     name: "",
     eatenOn: today,
     mealType: "",
     tags: "",
-    recipeUrl: "",
-    shopUrl: "",
+    recipeUrls: [""],
+    shopUrls: [""],
     recipeMemo: "",
     note: "",
   };
 }
+
+// 1 行のときは番号を付けない（読み上げ名。同じ名前の入力が並ぶと、どれを指しているか
+// 読み上げから分からない — ADR-010 §6）
+export function urlFieldLabel(base: string, index: number, count: number): string {
+  return count === 1 ? base : `${base} ${index + 1}`;
+}
+
+// 欄の足し引き。値の配列そのものが状態なので、行の増減はここだけで完結する
+export function addUrlRow(urls: readonly string[]): string[] {
+  return [...urlRows(urls), ""];
+}
+
+export function setUrlRow(urls: readonly string[], index: number, value: string): string[] {
+  return urlRows(urls).map((url, i) => (i === index ? value : url));
+}
+
+export function removeUrlRow(urls: readonly string[], index: number): string[] {
+  return urlRows(urlRows(urls).filter((_, i) => i !== index));
+}
+
+// 1 投稿に貼れる URL の本数（レシピ + お店・商品 の合計）。サーバーの MAX_LINKS_PER_MEAL と同じ値で、
+// フォームは上限に達したら「追加」を無効にする（送ってから断られない — ADR-010 §2）
+export const MAX_LINKS_PER_MEAL = 6;
 
 // タグ入力は空白・読点・カンマ区切り（全角スペース U+3000 も \s に入る）
 export function parseTagInput(input: string): string[] {
@@ -58,8 +87,8 @@ export function applySuggestion(form: MealFormState, suggestion: MealSuggestion)
     ...form,
     name: suggestion.name,
     tags: formatTagInput(suggestion.tags),
-    recipeUrl: suggestion.recipeUrl ?? "",
-    shopUrl: suggestion.shopUrl ?? "",
+    recipeUrls: urlRows(suggestion.recipeUrls),
+    shopUrls: urlRows(suggestion.shopUrls),
     recipeMemo: suggestion.recipeMemo ?? "",
   };
 }
@@ -72,11 +101,15 @@ export function mealFormFrom(meal: Meal): MealFormState {
     eatenOn: meal.eatenOn,
     mealType: meal.mealType ?? "",
     tags: formatTagInput(meal.tags),
-    recipeUrl: meal.recipeUrl ?? "",
-    shopUrl: meal.shopUrl ?? "",
+    recipeUrls: urlRows(meal.links.flatMap((l) => (l.kind === "recipe" ? [l.url] : []))),
+    shopUrls: urlRows(meal.links.flatMap((l) => (l.kind === "shop" ? [l.url] : []))),
     recipeMemo: meal.recipeMemo ?? "",
     note: meal.note ?? "",
   };
+}
+
+function trimUrls(urls: readonly string[]): string[] {
+  return urls.map((u) => u.trim()).filter((u) => u !== "");
 }
 
 export function toMealContentBody(form: MealFormState): MealContentBody {
@@ -84,9 +117,9 @@ export function toMealContentBody(form: MealFormState): MealContentBody {
     name: form.name.trim(),
     eatenOn: form.eatenOn,
     mealType: toMealType(form.mealType),
-    // 空文字は「なし」（サーバーの nullable と揃える）
-    recipeUrl: form.recipeUrl.trim() || null,
-    shopUrl: form.shopUrl.trim() || null,
+    // 空欄は落とす（サーバーも同じ規則。フォームは常に空の 1 行を残す）
+    recipeUrls: trimUrls(form.recipeUrls),
+    shopUrls: trimUrls(form.shopUrls),
     recipeMemo: form.recipeMemo.trim() || null,
     note: form.note.trim() || null,
     tags: parseTagInput(form.tags),

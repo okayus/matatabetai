@@ -148,8 +148,9 @@ export const meals = sqliteTable(
       .references(() => users.id),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
-    // レシピ URL と お店・商品 URL。作り方メモと合わせた独立 3 項目で、排他ではなく併用できる
-    // （ADR-007 §1）。ADD COLUMN は末尾に付くので、物理順どおりここに並べる
+    // 凍結列（ADR-010 §3）。レシピ / お店・商品 の URL は meal_links が持つようになったので、
+    // ここは移行前の値を留めているだけで読まないし書かない（掃除は Phase 4 の rebuild で
+    // recipe_source_type / url とまとめて）。ADD COLUMN は末尾に付くので、物理順どおりここに並べる
     recipeUrl: text("recipe_url"),
     shopUrl: text("shop_url"),
   },
@@ -190,6 +191,46 @@ export const mealPhotos = sqliteTable(
   (t) => [index("meal_photos_meal_id_idx").on(t.mealId)],
 );
 
+// レシピ / お店・商品 の URL（ADR-010）。1 投稿に複数本ぶら下がる meals の CASCADE 子で、
+// URL そのものと、投稿時点の OGP スナップショット（ADR-007 §3）を 1 行に持つ。
+// URL 1 本にカードはちょうど 1 枚なので、表は割らない。
+// position は kind の中での並び（利用者が入力した順）。id は og:image の配信 URL
+// （/meals/:mealId/links/:linkId/image）と R2 キー（ogp/<spaceId>/<mealId>/<linkId>）に使う。
+// 行は不変 — URL を貼り替える編集は、この行を消して別 id の行を立てる（ADR-010 §4）
+export const mealLinks = sqliteTable(
+  "meal_links",
+  {
+    id: text("id").primaryKey(),
+    mealId: text("meal_id")
+      .notNull()
+      .references(() => meals.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["recipe", "shop"] }).notNull(),
+    position: integer("position").notNull(),
+    url: text("url").notNull(),
+    status: text("status", { enum: ["pending", "ok", "failed"] }).notNull(),
+    title: text("title"),
+    description: text("description"),
+    siteName: text("site_name"),
+    imageR2Key: text("image_r2_key"),
+    // 取得が終わった時刻（pending の間は null）
+    fetchedAt: text("fetched_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [
+    // 一覧は WHERE meal_id IN (…)
+    index("meal_links_meal_id_idx").on(t.mealId),
+    // meal_link_previews と同じ理由で CHECK を付けてよい: この表は CASCADE の子を持たないので、
+    // 値が増えて table rebuild になっても道連れに消えるものが無い
+    check("meal_links_kind_check", sql`${t.kind} IN ('recipe', 'shop')`),
+    check("meal_links_status_check", sql`${t.status} IN ('pending', 'ok', 'failed')`),
+  ],
+);
+
+// 凍結表（ADR-010 §3）。meal_links に移したので読まないし書かない。backfill が間違っていた
+// ときの戻り先として残してあり、掃除は Phase 4 のバックアップ整備後に meals の凍結列
+// （recipe_source_type / url / recipe_url / shop_url）とまとめて行う。
+//
+// 以下は凍結時点の説明:
 // URL プレビュー（ADR-007 §3-4）。meals の CASCADE 子で、投稿時点のスナップショットを持つ。
 // 行は投稿と同じ batch で status='pending' として作り、waitUntil の取得が 'ok' / 'failed' に更新する。
 // og:image は hotlink せず Worker が取り込んで private R2（ogp/<spaceId>/<mealId>/<kind>）に置き、

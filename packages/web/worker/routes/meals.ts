@@ -11,7 +11,7 @@ import {
 } from "../domain/meal";
 import type { SpaceEnv } from "../env";
 import { createMeal, deleteMeal, setMataTabetai, updateMeal } from "../meals/commands";
-import { runLinkPreviewJobs } from "../meals/link-previews";
+import { runLinkPreviewJobs } from "../meals/links";
 import {
   aggregateMealNames,
   aggregateMealTags,
@@ -86,15 +86,14 @@ export const mealRoutes = new Hono<SpaceEnv>()
       name: parsed.value.name,
       eatenOn: parsed.value.eatenOn,
       mealType: parsed.value.mealType,
-      recipeUrl: parsed.value.recipeUrl,
-      shopUrl: parsed.value.shopUrl,
       recipeMemo: parsed.value.recipeMemo,
       note: parsed.value.note,
       mataTabetai: false,
       tags: created.tags,
       photos: [],
-      // この時点ではどれも取得中。カードは次に一覧を読んだときに出る
-      previews: created.previewTargets.map((t) => ({ kind: t.kind, status: "pending" as const })),
+      // 立てた行をそのまま返す（並びは plannedLinks が決めた レシピ → お店・商品 の順）。
+      // この時点ではどれも取得中で、カードは次に一覧を読んだときに出る
+      links: created.links,
       createdBy: c.var.userId,
       createdByName: c.var.displayName,
       createdAt: now,

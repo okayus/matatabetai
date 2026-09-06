@@ -15,6 +15,9 @@ export function resetLocalDb(): void {
   executeLocalSql(
     [
       "DELETE FROM meal_tags",
+      "DELETE FROM meal_links",
+      // 凍結表（ADR-010 §3）。もう書かないが、移行前のローカルデータが残っていると
+      // 次の投稿の FK ではなく DELETE の順で引っかかるので一緒に消す
       "DELETE FROM meal_link_previews",
       "DELETE FROM meals",
       "DELETE FROM tags",

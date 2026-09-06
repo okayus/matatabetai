@@ -1,28 +1,30 @@
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/d1";
 import { mealTags, meals, tags, users } from "../db/schema";
-import type { LinkPreview } from "../domain/link-preview";
+import type { MealLink } from "../domain/link-preview";
 import { likePattern, normalizeName, type MealLinks, type MealType } from "../domain/meal";
-import { previewsByMealIds } from "./link-previews";
+import { linksByMealIds, urlsByMealIds } from "./links";
 import { photosByMealIds, type MealPhotoSummary } from "./photos";
 
 type Db = ReturnType<typeof drizzle>;
 
 export type MealTagSummary = { id: string; name: string };
 
-// リンク・メモの 3 項目は入力と同じ形で返す（MealLinks — ADR-007 §1）。
-// 凍結列 recipe_source_type / url は API に出さない。
-// previews は URL がある欄のぶんだけ並ぶ（取得中・失敗も 1 要素として出る — ADR-007 §5）
-export type MealSummary = MealLinks & {
+// links は貼られた URL のぶんだけ、レシピ → お店・商品 の順に並ぶ（ADR-010 §1）。
+// 取得中・失敗も 1 要素として出る（プレーンリンクとして表示される — ADR-007 §5）。
+// 入力（URL の配列）と出力（id と取得状態を持つ行）は形が違うので MealLinks は混ぜない。
+// 凍結列 recipe_source_type / url / recipe_url / shop_url は API に出さない
+export type MealSummary = {
   id: string;
   name: string;
   eatenOn: string;
   mealType: MealType | null;
+  recipeMemo: string | null;
   note: string | null;
   mataTabetai: boolean;
   tags: MealTagSummary[];
   photos: MealPhotoSummary[];
-  previews: LinkPreview[];
+  links: MealLink[];
   createdBy: string;
   createdByName: string;
   createdAt: string;
@@ -48,8 +50,6 @@ const MEAL_COLUMNS = {
   name: meals.name,
   eatenOn: meals.eatenOn,
   mealType: meals.mealType,
-  recipeUrl: meals.recipeUrl,
-  shopUrl: meals.shopUrl,
   recipeMemo: meals.recipeMemo,
   note: meals.note,
   mataTabetai: meals.mataTabetai,
@@ -59,21 +59,21 @@ const MEAL_COLUMNS = {
   updatedAt: meals.updatedAt,
 } as const;
 
-type MealRow = Omit<MealSummary, "tags" | "photos" | "previews">;
+type MealRow = Omit<MealSummary, "tags" | "photos" | "links">;
 
-// タグ・写真・プレビューを 1 往復ずつでまとめて足す（行ごとに引かない）
+// タグ・写真・リンクを 1 往復ずつでまとめて足す（行ごとに引かない）
 async function withRelations(db: Db, rows: MealRow[]): Promise<MealSummary[]> {
   const ids = rows.map((r) => r.id);
-  const [tagsByMeal, photosByMeal, previewsByMeal] = await Promise.all([
+  const [tagsByMeal, photosByMeal, linksByMeal] = await Promise.all([
     loadMealTags(db, ids),
     photosByMealIds(db, ids),
-    previewsByMealIds(db, ids),
+    linksByMealIds(db, ids),
   ]);
   return rows.map((row) => ({
     ...row,
     tags: tagsByMeal.get(row.id) ?? [],
     photos: photosByMeal.get(row.id) ?? [],
-    previews: previewsByMeal.get(row.id) ?? [],
+    links: linksByMeal.get(row.id) ?? [],
   }));
 }
 
@@ -177,8 +177,6 @@ export async function listSuggestions(
         name: meals.name,
         lastEatenOn: meals.eatenOn,
         createdAt: meals.createdAt,
-        recipeUrl: meals.recipeUrl,
-        shopUrl: meals.shopUrl,
         recipeMemo: meals.recipeMemo,
         rank: sql<number>`row_number() over (partition by ${meals.nameNormalized} order by ${meals.eatenOn} desc, ${meals.createdAt} desc)`.as(
           "rank",
@@ -202,8 +200,6 @@ export async function listSuggestions(
       mealId: ranked.mealId,
       name: ranked.name,
       lastEatenOn: ranked.lastEatenOn,
-      recipeUrl: ranked.recipeUrl,
-      shopUrl: ranked.shopUrl,
       recipeMemo: ranked.recipeMemo,
       everMataTabetai: ranked.everMataTabetai,
     })
@@ -213,14 +209,19 @@ export async function listSuggestions(
     .limit(SUGGESTION_LIMIT);
 
   const ids = rows.map((r) => r.mealId);
-  const [tagsByMeal, photosByMeal] = await Promise.all([
+  const [tagsByMeal, photosByMeal, urlsByMeal] = await Promise.all([
     loadMealTags(db, ids),
     photosByMealIds(db, ids),
+    urlsByMealIds(db, ids),
   ]);
   return rows.map(({ everMataTabetai, ...rest }) => {
     const first = photosByMeal.get(rest.mealId)?.[0];
+    const urls = urlsByMeal.get(rest.mealId);
     return {
       ...rest,
+      // 引き継ぐのはフォームと同じ形（URL の配列）— サジェストは前回の内容の複製だから
+      recipeUrls: urls?.recipeUrls ?? [],
+      shopUrls: urls?.shopUrls ?? [],
       mataTabetai: everMataTabetai > 0,
       tags: tagsByMeal.get(rest.mealId) ?? [],
       photo: first ? { id: first.id, hasThumb: first.hasThumb } : null,
