@@ -6,7 +6,7 @@
 
 ## フェーズ
 
-**Phase 3（振り返れる）は完了。Phase 4（公開前の堅牢化）に入る: D1 バックアップ → bot scan 対策 → 凍結列・凍結表の掃除。** 2026-09-06 の追い足し #61（記録ボタンを右下に固定）と #62（URL を複数登録、ADR-010 + migration 0006、backfill 済）は本番稼働。部分一致は #58 の `?q=`（LIKE）で稼働済みで残るは FTS5 化だけ。e2e はコンテナ内で手動（4 spec）。設計 ADR-001〜010、段取り roadmap.md（deploy / CI / main 保護の前提は CLAUDE.md）。
+**Phase 3（振り返れる）は完了。Phase 4（公開前の堅牢化）に入る: D1 バックアップ → bot scan 対策 → 凍結列・凍結表の掃除。** その後に **kokemusu への定期投稿**（「作った人」で絞った料理を `料理` タグで積む — [plans/kokemusu-post.md](plans/kokemusu-post.md)、grill 待ち）。部分一致は `?q=`（LIKE）稼働済みで残るは FTS5 化だけ。e2e はコンテナ内で手動（4 spec）。設計 ADR-001〜010、段取り roadmap.md（deploy / CI / main 保護の前提は CLAUDE.md）。
 
 ## 次の 3 手
 
