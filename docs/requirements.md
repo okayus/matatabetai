@@ -1,6 +1,6 @@
 # 要件（正典）
 
-2026-08-22 時点の要件（3〜5・8 の改訂と 10 の追加は 2026-09-03 — [ADR-007](adr/007-recipe-links-ogp.md)、11〜13 の追加は 2026-09-03、11 の詳細は [ADR-008](adr/008-meal-edit.md)、14〜15 の追加は 2026-09-05、15 の詳細は [ADR-009](adr/009-photo-first-home.md)、14 の投稿ボタンの位置と 3 / 5 / 8 / 10 の URL 複数化は 2026-09-06 改訂 — [ADR-010](adr/010-multiple-links.md)、16 の追加は 2026-09-06 — [ADR-011](adr/011-meal-detail.md)、17 の追加は 2026-09-07 — [ADR-012](adr/012-meal-cooks.md)）。2026-05 の製品意図（CLAUDE.md「このアプリは何のためにあるか」）を前提に、機能要件を列挙する。変更はこのファイルを更新してから実装する。
+2026-08-22 時点の要件（3〜5・8 の改訂と 10 の追加は 2026-09-03 — [ADR-007](adr/007-recipe-links-ogp.md)、11〜13 の追加は 2026-09-03、11 の詳細は [ADR-008](adr/008-meal-edit.md)、14〜15 の追加は 2026-09-05、15 の詳細は [ADR-009](adr/009-photo-first-home.md)、14 の投稿ボタンの位置と 3 / 5 / 8 / 10 の URL 複数化は 2026-09-06 改訂 — [ADR-010](adr/010-multiple-links.md)、16 の追加は 2026-09-06 — [ADR-011](adr/011-meal-detail.md)、17 の追加は 2026-09-07 — [ADR-012](adr/012-meal-cooks.md)、18 の追加は 2026-09-11 — [ADR-013](adr/013-kokemusu-daily-push.md)）。2026-05 の製品意図（CLAUDE.md「このアプリは何のためにあるか」）を前提に、機能要件を列挙する。変更はこのファイルを更新してから実装する。
 
 ## 一言で
 
@@ -28,6 +28,8 @@
 16. **記録の詳細** — 写真をタップすると記録の詳細がひらく。写真をカルーセルで送りながら、料理名・日付・タグ・リンク・メモを読み、そこから「またたべたい」「編集」「削除」ができる。送る操作（← →・何枚目かの札・行き先の点）は写真の上に常に出ている（[ADR-011](adr/011-meal-detail.md)）
 
 17. **作った人** — 記録に「誰が作ったか」を残せる。スペースに参加している人から選び、複数人えらべる（二人で作った回もある）。記録した人とは別物で、選ばなければ「作った人は記録していない」（外食など）。作った人がスペースを抜けても記録には残る（[ADR-012](adr/012-meal-cooks.md)）
+
+18. **kokemusu への日次投稿** — 持ち主が作った料理（作った人に自分が入っている記録。スペースは問わない）を、持ち主の日記 kokemusu に日ごと 1 本の苔片として自動で積む。本文は料理名とレシピのリンクだけ、タグは `料理`。送るのは閉じた日（前日以前）の分で、送った後の訂正・削除は反映しない。画面には出さない（[ADR-013](adr/013-kokemusu-daily-push.md)）
 
 ## 非機能・前提
 
@@ -59,6 +61,9 @@ meal_tags    (meal_id, tag_id)                       PK(meal_id, tag_id)
 meal_cooks   (meal_id, user_id)                      PK(meal_id, user_id)   ← ADR-012
              ※ 作った人。行はスペースのメンバーだけが立つ（INSERT … SELECT）が、
                抜けた後も残る（過去の事実）。記録した人 = meals.created_by とは別
+kokemusu_posts (meal_id PK, status ('ok'|'retry'|'failed'), http_status,
+                attempted_at, posted_at)                                ← ADR-013
+             ※ kokemusu へ送った台帳。meals の CASCADE 子。表示には使わない
 ```
 
 - `name_normalized` = NFKC 正規化 + trim + 小文字化。集計・サジェスト・タグ一意性はこちらを使う。表示は入力そのまま
@@ -87,5 +92,6 @@ meal_cooks   (meal_id, user_id)                      PK(meal_id, user_id)   ← 
 - **リンクとメモ**はレシピ URL / お店・商品 URL / 作り方メモの独立 3 項目（併用可、排他をやめた）。URL は種類ごとに複数貼れ、合計 6 本まで（[ADR-010](adr/010-multiple-links.md) §2 — Workers Free の外部 subrequest 50/invocation が天井）。URL プレビューは投稿時スナップショットで、URL と同じ `meal_links` の行 + R2 — [ADR-007](adr/007-recipe-links-ogp.md) / [ADR-010](adr/010-multiple-links.md)
 - **編集**は内容の全置き換え（`PUT /meals/:id`）。またたべたい・写真は別リソースのまま、タグは張り替え、URL は同じものを据え置いて足し引きだけ行う（貼り替えた分だけプレビューを取り直す）— [ADR-008](adr/008-meal-edit.md) / [ADR-010](adr/010-multiple-links.md) §4
 - **作った人**は `meal_cooks` の結合行（複数可、スペースのメンバーから選ぶ）。記録した人（`created_by`）とは別で、表示は「◯◯・△△ が作った、□□ が記録」の 1 行に畳む。編集は張り替えではなく足し引き（抜けた人の行を黙って消さない）、サジェストでは引き継がない（回ごとに変わる）— [ADR-012](adr/012-meal-cooks.md)
+- **kokemusu への日次投稿**は Cron（00:15 JST）で、`vars.KOKEMUSU_COOK_USER_ID` が作った人に入っている記録を、閉じた日ごとに 1 苔片にまとめて送る。本文は料理名とレシピのリンク、タグは `料理`、`kind` は `output`。送った記録は `kokemusu_posts` に残し（失敗は翌晩に送り直す。400 / 401 / 403 は人手）、受け側の契約は転記せず `docs/senders.md` と vendoring した schema を読む — [ADR-013](adr/013-kokemusu-daily-push.md)
 - **またたべたい** は投稿に対するトグル（favorite）。UI 上の主役なので一覧・集計で前に出す
 - **日本語の部分一致検索**は当面 `LIKE '%…%'`（家族規模。`GET /meals?q=` の一覧フィルタ、ホームの検索 — [ADR-009](adr/009-photo-first-home.md) §1）。D1 の FTS5 は使えるが日本語には trigram tokenizer が要り、D1 での可否は要確認

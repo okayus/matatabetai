@@ -1,6 +1,6 @@
 # ロードマップ
 
-「基盤 → 認証と境界 → 記録できる → 振り返れる → 公開前の堅牢化」の順。経緯は [log.md](log.md)、いまの 3 手は [status.md](status.md)（自動注入）。チェックボックスだけ更新し、経緯は書かない。
+「基盤 → 認証と境界 → 記録できる → 振り返れる → 外へつなぐ → 公開前の堅牢化」の順（Phase 5 は 2026-09-11 に Phase 4 より先へ。Phase 4 の D1 バックアップは後回し）。経緯は [log.md](log.md)、いまの 3 手は [status.md](status.md)（自動注入）。チェックボックスだけ更新し、経緯は書かない。
 
 ## Phase 0 — 基盤（完了 2026-08-23）
 
@@ -35,12 +35,17 @@
 - [x] 記録ボタンを右下に固定（[ADR-009](adr/009-photo-first-home.md) §5 改訂）+ レシピ・お店の URL を複数に（[requirements](requirements.md) 3 / 5）— [ADR-010](adr/010-multiple-links.md)。2026-09-06 追加
 - [x] 写真から開く記録の詳細（[requirements](requirements.md) 16: 送りの操作を写真の上に・そこから編集）— [ADR-011](adr/011-meal-detail.md)。2026-09-06 追加
 
+## Phase 5 — 外へつなぐ
+
+- [ ] kokemusu への日次投稿（[requirements](requirements.md) 18: 自分が作った料理を 1 日 1 苔片で）— [ADR-013](adr/013-kokemusu-daily-push.md)。2026-09-11 追加
+
 ## Phase 4 — 公開前の堅牢化
 
 - [ ] bot scan 対策・認証 route のレート制限 — `cloudflare-workers-bot-scan-defense`
-- [ ] D1 バックアップ — `cloudflare-d1-weekly-backup-via-pr`（public なら git commit 変種は不可 → keyless 変種）
+- [ ] 凍結列・凍結表の掃除（`recipe_url` / `shop_url` / `meal_link_previews` は rebuild なしで落とせる。CHECK 付きの `recipe_source_type` / `url` は rebuild）
 - [x] 写真のバックアップ方針を ADR に（R2 に PITR なし）
 - [ ] 日本語部分一致の FTS5 化（LIKE は #58 で稼働。D1 の trigram tokenizer は要確認）、スペース切替 UI
+- [ ] D1 バックアップ — `cloudflare-d1-weekly-backup-via-pr` の形は public + keyless で取れない。Time Travel（Free は 7 日）を前提に形を決める
 
 ---
 
@@ -53,3 +58,4 @@
 5. ~~デプロイ経路~~ → ✅ Workers Builds（キーレス）へ移行済み（ADR-001 §1、#33。GitHub 側に Cloudflare の credential は無い）
 6. ~~写真のバックアップ~~ → ✅ 受容（アプリが持つのは縮小コピーで原本はスマホに残る。[ADR-004](adr/004-meal-photos-r2.md) §7、2026-09-01）
 7. レシピ本文の取り込み — JSON-LD（schema.org/Recipe）路線で調査を先行（人間: cookpad 等の規約原文をホストのブラウザで確認）→ ADR で決める（2026-09-03。番号は起草時に採る。Readability 全文抽出は採らない）
+8. ~~kokemusu 連携の形~~ → ✅ 日次 Cron（00:15 JST）・全スペース・1 日 1 苔片・台帳 `kokemusu_posts`・失敗は翌晩に送り直し（[ADR-013](adr/013-kokemusu-daily-push.md)、2026-09-11）

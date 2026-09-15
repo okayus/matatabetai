@@ -41,9 +41,9 @@
 
 Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono / React + Vite + `@cloudflare/vite-plugin` / Drizzle + D1 / R2 / Zod / neverthrow / pnpm / TypeScript strict）。
 
-**使わない:**
+**Cron Triggers は 1 本だけ:**
 
-- **Cron Triggers** — 定期実行を要する機能は当面持たない
+- kokemusu への日次投稿（`15 15 * * *` = 00:15 JST、[ADR-013](./docs/adr/013-kokemusu-daily-push.md)）。ほかの定期実行を要する機能は当面持たない（Workers Free の Cron はアカウントあたり 5 本・CPU 10 ms / 発火）
 
 **D1 命名:**
 
