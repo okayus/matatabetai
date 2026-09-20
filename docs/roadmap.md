@@ -1,6 +1,6 @@
 # ロードマップ
 
-「基盤 → 認証と境界 → 記録できる → 振り返れる → 外へつなぐ → 公開前の堅牢化」の順（Phase 5 は 2026-09-11 に Phase 4 より先へ。Phase 4 の D1 バックアップは後回し）。経緯は [log.md](log.md)、いまの 3 手は [status.md](status.md)（自動注入）。チェックボックスだけ更新し、経緯は書かない。
+「基盤 → 認証と境界 → 記録できる → 振り返れる → 外へつなぐ → 公開前の堅牢化」の順（Phase 5 は 2026-09-11 に Phase 4 より先へ）。経緯は [log.md](log.md)、いまの 3 手は [status.md](status.md)（自動注入）。チェックボックスだけ更新し、経緯は書かない。
 
 ## Phase 0 — 基盤（完了 2026-08-23）
 
@@ -34,6 +34,7 @@
 - [x] 写真ファーストのトップページ（[requirements](requirements.md) 15: 既定は写真だけ・検索 + 投稿済み写真）— [ADR-009](adr/009-photo-first-home.md)
 - [x] 記録ボタンを右下に固定（[ADR-009](adr/009-photo-first-home.md) §5 改訂）+ レシピ・お店の URL を複数に（[requirements](requirements.md) 3 / 5）— [ADR-010](adr/010-multiple-links.md)。2026-09-06 追加
 - [x] 写真から開く記録の詳細（[requirements](requirements.md) 16: 送りの操作を写真の上に・そこから編集）— [ADR-011](adr/011-meal-detail.md)。2026-09-06 追加
+- [x] 誰が作った料理かを記録（[requirements](requirements.md) 17: スペースの参加者から複数選択）— [ADR-012](adr/012-meal-cooks.md)。2026-09-07 追加
 
 ## Phase 5 — 外へつなぐ
 
@@ -45,7 +46,7 @@
 - [ ] 凍結列・凍結表の掃除（`recipe_url` / `shop_url` / `meal_link_previews` は rebuild なしで落とせる。CHECK 付きの `recipe_source_type` / `url` は rebuild）
 - [x] 写真のバックアップ方針を ADR に（R2 に PITR なし）
 - [ ] 日本語部分一致の FTS5 化（LIKE は #58 で稼働。D1 の trigram tokenizer は要確認）、スペース切替 UI
-- [ ] D1 バックアップ — `cloudflare-d1-weekly-backup-via-pr` の形は public + keyless で取れない。Time Travel（Free は 7 日）を前提に形を決める
+- [x] D1 バックアップ — ホストの週次 timer で export（skill `cloudflare-d1-keyless-host-backup`、2026-09-20）。migration の PR は merge 前に Time Travel の bookmark を PR に残す
 
 ---
 
