@@ -2,10 +2,13 @@
 name: handoff
 description: セッションの区切りで進捗を書き戻す。docs/status.md を「いま」だけに書き換え、完了した節目を docs/log.md の先頭へ 1 行で移し、上限（40 行 / 3 KB・見出し 4 つ固定）を検査して commit する。ユーザが /handoff と打ったときだけ実行する。
 disable-model-invocation: true
+effort: medium
 argument-hint: "[一言メモ（任意）]"
 ---
 
 ユーザからの一言メモ: $ARGUMENTS（空なら無視）。
+
+frontmatter の `effort: medium` は、定型の書き戻しをセッションの effort（max）で回さないため。この skill が動くターンだけに効く（2026-09-20）。
 
 ## 手順（この順で。省略しない）
 
@@ -17,6 +20,7 @@ argument-hint: "[一言メモ（任意）]"
 6. **commit → PR → merge**: 現在のブランチが `main` なら `claude/handoff-YYYY-MM-DD` を切ってから、`docs(status): <要約>` で commit する。
    - **同名のローカルブランチが前回の handoff から残っていることがある**（squash merge で消えるのはリモート側だけ）。`git switch -c` が「already exists」で落ちたら、その stale なブランチを消して `main` から切り直す。古い base の上に載せると、その後に merge された実装 PR を revert する差分になる。commit したら `git diff --stat main..HEAD` が docs だけであることを確かめる。
    - **push・`gh pr create`・`gh pr merge --auto --squash` までユーザに確認せず進めてよい**（2026-09-03 のユーザ指示）。docs だけの PR に限る — `docs/adr/**` を含むときと実装 PR（`drizzle/` / `.github/**` / `.claude/**`）は CLAUDE.md どおり人間の merge を待つ。
+   - **ブランチを切るコマンドと commit は別々に打つ**。`git switch -c … && git add … && git commit …` と 1 コマンドにつなぐと、`block-main-commit` は判定の時点でまだ `main` にいるので誤って止める（08-31〜09-05 に 6 回。対策がコンテナ内のメモリにしか無かったのでここに書く）。
    - arm したら merge されたかまで見届ける。CI が green なのに OPEN のままなら `gh pr merge --auto --squash <PR番号>` を打ち直す。
 7. 最後に「次セッションの出発点」（status.md「次の 3 手」の 1 手目）を 1 行で報告する。
 

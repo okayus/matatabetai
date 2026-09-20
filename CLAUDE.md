@@ -88,7 +88,7 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 2. **実装と commit**: 小さく積む。`.github/workflows/**` は変更しない（token に `workflows` 権限が無く push が拒否される。人間がホストで行う）。ただし CI の中身は yaml を触らずに変えられる — ci.yml は「安定シェル」で、実体は `package.json` の `ci` script・`.node-version`・`.claude/hooks/` にあり、これらは push できる。action の @vN 更新は Dependabot が PR を出す
 3. **push と PR**: `git push -u origin claude/<branch>` → `gh pr create --fill`（計画・確認内容を本文に）→ **PR の URL を報告する**
 4. **CI 確認**: `gh pr checks --watch`。red なら直して commit を積む
-5. **merge**: CI が green なら `gh pr merge --auto --squash <PR番号>` で auto-merge を arm してよい（required check `ci` が通ったときだけ GitHub が squash merge する。`--auto` なしの即時 merge と `gh api` は使わない）。**例外 — 次に触れる PR は arm せず人間の merge を待つ**: `drizzle/`（migration。merge が本番 D1 への適用に直結するので PR 本文に backup 手順を書く — skill `cloudflare-d1-drizzle-migration`）・`.github/**`・`.claude/**`・`docs/adr/**`
+5. **merge**: CI が green なら `gh pr merge --auto --squash <PR番号>` で auto-merge を arm してよい（required check `ci` が通ったときだけ GitHub が squash merge する。`--auto` なしの即時 merge と `gh api` は使わない）。**migration の PR は、merge の前にホストで `node ~/.config/d1-backup/d1-bookmark.mjs matatabetai <PR番号>` を実行し、D1 Time Travel の bookmark が PR にコメントされていることを条件にする**（コンテナは Cloudflare の資格情報を持たないので取れない。持ち主に「マージして」と言われても、`gh pr view <PR番号> --comments` に bookmark が無ければ merge せず、このコマンドを案内する。家族の実データが入っている）。**例外 — 次に触れる PR は arm せず人間の merge を待つ**: `drizzle/`（migration。merge が本番 D1 への適用に直結するので PR 本文に backup 手順を書く — skill `cloudflare-d1-drizzle-migration`）・`.github/**`・`.claude/**`・`docs/adr/**`
 6. **進捗の書き戻し**: セッションの区切りでユーザが `/handoff` を打つ（`docs/status.md` を書き換え → `docs/log.md` → 上限検査 → commit）。PR の途中で `docs/status.md` を触るなら上限（40 行 / 3 KB、見出し 4 つ）を守る — CI が検査する
 7. **token の扱い**: `GH_TOKEN` はこのプロジェクトの repo-scoped token。表示しない、`gh auth login` しない、URL に埋めない。`git push` が `401` を返したら `./shell.sh` 以外で開いたシェルにいる＝ token 無し。**回避しようとせず人間に `./shell.sh` を開いてもらう**（`op` のセッションはエージェントには無い）。PR 本文の修正は `gh pr comment` で（`gh pr edit` は image の古い `gh` が Projects classic の GraphQL エラーで落ちる）。**コンテナ内から `docker compose up` は打たない**
 
@@ -105,9 +105,9 @@ Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono /
 
 ### Agent skills
 
-- **okayus-skills**（`../okayus-skills`。この status hub の出典 `agent-status-hub`、sandbox / token / docs / Cloudflare 各 skill）は `docker-compose.override.yml` で `~/.claude/skills` に **読み書き可**でマウントされる（ホストのセッションは user scope の copy を見る — 古い可能性があるので `gh skill update` を挟む）。**このリポジトリに okayus-skills を vendoring しない**（2026-05 の project-scope copy は古くなったので削除済み）
+- **okayus-skills**（`../okayus-skills`。この status hub の出典 `agent-status-hub`、sandbox / token / docs / Cloudflare 各 skill）は `docker-compose.override.yml` で `~/.claude/skills` に **読み取り専用**でマウントされる（2026-09-20 に `:ro` へ戻した。ホストの `~/.claude/skills` は同じ場所への symlink なので、書き込み可だと、権限確認なしで動くコンテナが資格情報を持つホスト側 Claude の読む指示を書き換えられる。ホストのセッションは user scope の copy を見る — 古い可能性があるので `gh skill update` を挟む）。**このリポジトリに okayus-skills を vendoring しない**（2026-05 の project-scope copy は古くなったので削除済み）
 - このプロジェクトは `cloudflare-workers-passkey-auth` / `cloudflare-workers-space-membership-invite` / `cloudflare-r2-private-image-upload` の**最初の利用者**で、各 SKILL.md の `## Unverified claims — confirm while implementing, then write back` 節が還元チェックリスト
-  - **還元のルール**: 実装中に `UNVERIFIED:` 項目を確認・訂正したら、**その場で** `~/.claude/skills/<skill>/SKILL.md`（= ホストの okayus-skills）を直し、`(verified YYYY-MM-DD in matatabetai)` を添えて `metadata.version` を上げる。commit / PR はホスト側で `cd ../okayus-skills` して行う（`feat(<skill>): … を還元`）。このリポジトリの PR とは別
+  - **還元のルール**: 実装中に `UNVERIFIED:` 項目を確認・訂正したら、コンテナからは skill を書けないので、**還元メモ**（どの skill のどの項目を、何に直すか。`(verified YYYY-MM-DD in matatabetai)` を添える）を PR 本文か完了報告に書く。SKILL.md の編集・`metadata.version` の更新・commit / PR はホスト側で `cd ../okayus-skills` して行う（`feat(<skill>): … を還元`）。このリポジトリの PR とは別
   - 新しい罠を踏んだら同じ skill の pitfalls に追記する。skill に無い新しい話題（例: OGP 取得）は新 skill 候補として `docs/roadmap.md` に書く
 - **third-party skill** は `.claude/skills/` に実体を vendoring する（symlink にしない）。コンテナ内で `npx skills add <owner>/<repo>@<skill> -a claude-code -y`。`skills-lock.json` を commit、更新も同じ `add` を打ち直して単独 PR（`npx skills update` は `.claude/skills/<skill>` を gitignore 済みの `.agents/` への symlink に変え、clone 先で壊れるので使わない）
 - **公式ドキュメントの調べ方（3 層。事前学習の記憶で API を断定しない）**: ① `context7` MCP（`resolve-library-id` → `query-docs`。MDN / Hono / Drizzle / React / Vite / Cloudflare Workers を横断）— Cloudflare は `cloudflare-docs` MCP を最優先 ② `llms.txt` の直読み（WebFetch: `hono.dev/llms.txt` `orm.drizzle.team/llms.txt` `react.dev/llms.txt` `vite.dev/llms.txt` `vitest.dev/llms.txt` `zod.dev/llms.txt` `developers.cloudflare.com/llms.txt`。目次 → 必要ページ。`llms-full.txt` は巨大なので最後） ③ WebSearch → WebFetch（WebSearch は Anthropic 側で実行され egress 不要。URL が firewall の allowlist 外なら取得できないので ① に戻る）
@@ -204,7 +204,7 @@ pnpm dev -- --host 0.0.0.0   # 開発サーバー → ホストから http://loc
 pnpm build                   # プロダクションビルド
 pnpm check                   # pnpm types + type check（format / lint は未導入）
 pnpm test                    # ユニットテスト（vitest。純粋関数だけ）
-pnpm e2e                     # Playwright 3 spec（ビルド成果物を wrangler dev で配信。ローカル D1 を全消し。CI では回さない）
+pnpm e2e                     # Playwright 4 spec（ビルド成果物を wrangler dev で配信。ローカル D1 を全消し。CI では回さない）
 pnpm run ci                  # CI と同じ検査（-r で check + test + build。ci.yml はこれを呼ぶだけ）
 pnpm types                   # wrangler.jsonc から worker-configuration.d.ts を生成（gitignore。clone 直後に 1 回）
 pnpm db:generate --name <summary>   # schema.ts から drizzle/NNNN_<summary>.sql を生成（`--` を挟むと drizzle-kit が「Unrecognized options」で落ちる。rebuild が出たら skill cloudflare-d1-drizzle-migration）
