@@ -6,7 +6,7 @@
 
 ## フェーズ
 
-**Phase 3 は完了。次は Phase 5 = kokemusu への日次投稿（[ADR-013](adr/013-kokemusu-daily-push.md)、grill 済み）→ Phase 4 の bot scan → 凍結列の掃除。** D1 はホストの週次 timer で export 中（2026-09-20〜、`~/backups/d1/matatabetai/`。Time Travel 7 日も常時効く）。部分一致は `?q=` 稼働済みで残るは FTS5 化だけ。e2e はコンテナ内で手動（4 spec）。設計 ADR-001〜014、段取り roadmap.md。
+**Phase 3 は完了。次は Phase 5 = kokemusu への日次投稿（[ADR-013](adr/013-kokemusu-daily-push.md)、grill 済み）→ Phase 4 の bot scan → 凍結列の掃除。** D1 はホストの週次 timer で export 中（2026-09-20〜、`~/backups/d1/matatabetai/`。Time Travel 7 日も常時効く）。部分一致は `?q=` 稼働済みで残るは FTS5 化だけ。e2e はコンテナ内で手動（4 spec）。壁のセルは複数枚なら 1 秒ごとに巡る（#75、reduce では止まる）。設計 ADR-001〜014、段取り roadmap.md。
 
 ## 次の 3 手
 
@@ -20,7 +20,7 @@
 - **【人間】#41 の実サイト確認**: 本番でレシピ URL を貼って投稿 → カードが出るか（落ちれば `wrangler tail` に `[link-preview] fetch failed`）
 - **【人間】旧 `url` 投稿の仕分け**: #39 の backfill は一律レシピ扱い。お店・商品だった投稿は編集 UI で直す
 - **【人間】レシピ本文取り込みの前提**: cookpad 等の利用規約の原文をホストのブラウザで確認（JSON-LD `schema.org/Recipe` 路線が本命）
-- **【人間】スマホ実機での確認待ち**: [plans/mobile-check.md](plans/mobile-check.md)（#73「また記録する」を追加）。確認できた行から消す
+- **【人間】スマホ実機での確認待ち**: [plans/mobile-check.md](plans/mobile-check.md)（#75 壁の自動切り替えを追加: 1 秒の速さ・ちらつき・電池・「視差効果を減らす」で止まるか）。確認できた行から消す
 - `.github/workflows/**` は token で push 不可（残り `ci.yml` 1 本、action 更新は Dependabot）
 
 ## 進行中 PR
