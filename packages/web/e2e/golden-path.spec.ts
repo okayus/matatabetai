@@ -294,6 +294,36 @@ test("register → reload → meal record with photos → suggestion → search 
     "https://example.com/recipe/1",
   );
 
+  // 記録から「また記録する」（requirements 19 / ADR-014）: 詳細から押すと詳細が閉じて記録フォームが開き、
+  // その料理の属性（料理名・タグ・リンク 2 種・作り方メモ）が引き継がれている。日付・ひとことメモ・
+  // 作った人・写真は今回のもの（引き継がない）。別の日で記録すると 2 件目がその日の見出しの下に並び、
+  // 元の記録（写真 2 枚）は動かない
+  await feed.getByRole("button", { name: "肉じゃがリメイク の写真 1 をひらく" }).click();
+  const detailAgain = page.getByRole("dialog", { name: "肉じゃがリメイク" });
+  await detailAgain.getByRole("button", { name: /また記録する\s*（肉じゃがリメイク）/ }).click();
+  await expect(detailAgain).toBeHidden();
+  await expect(composer).toBeVisible();
+  await expect(composer.getByLabel("料理名")).toHaveValue("肉じゃがリメイク");
+  await expect(composer.getByLabel("タグ")).toHaveValue("じゃがいも 玉ねぎ");
+  await expect(composer.getByRole("textbox", { name: "レシピ URL", exact: true })).toHaveValue("https://example.com/recipe/1");
+  await expect(composer.getByRole("textbox", { name: "お店・商品 URL", exact: true })).toHaveValue("https://shop.example.com/item/1");
+  await expect(composer.getByLabel("作り方メモ")).toHaveValue("みりんを少し多めに");
+  await expect(composer.getByLabel("ひとことメモ")).toHaveValue("");
+  await expect(composer.getByRole("button", { name: "e2e-owner" })).toHaveAttribute("aria-pressed", "false");
+  await expect(composer.getByAltText(/選択中の写真/)).toHaveCount(0);
+  await expect(composer.getByText(/「肉じゃがリメイク」（.+の記録）の内容を引き継ぎました/)).toBeVisible();
+  await composer.getByLabel("食べた日").fill("2026-01-02");
+  await composer.getByRole("button", { name: "記録する" }).click();
+  await expect(composer).toBeHidden();
+  await expect(feed.getByText("肉じゃがリメイク", { exact: true })).toHaveCount(2);
+  await expect(feed.getByRole("heading", { name: /2026年1月2日/ })).toBeVisible();
+  await expect(feed.locator("img[src*='/photos/']")).toHaveCount(2);
+  // 2 件目は用済み。並びは食べた日の新しい順なので、古い日付の 2 件目が最後
+  page.once("dialog", (dialog) => void dialog.accept());
+  await feed.getByRole("button", { name: /削除.*肉じゃがリメイク/ }).last().click();
+  await expect(feed.getByText("肉じゃがリメイク", { exact: true })).toHaveCount(1);
+  await expect(feed.locator("img[src*='/photos/']")).toHaveCount(2);
+
   // カレーは用済み（残り 1 件にして、写真つきの削除を素のまま確かめる）
   page.once("dialog", (dialog) => void dialog.accept());
   await feed.getByRole("button", { name: /削除.*カレー/ }).click();

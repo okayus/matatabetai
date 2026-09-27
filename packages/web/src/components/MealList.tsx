@@ -40,6 +40,7 @@ export function MealList({
   cookOptions,
   view = "list",
   onMealsChange,
+  onRecordAgain,
   onError,
 }: {
   spaceId: string;
@@ -50,6 +51,9 @@ export function MealList({
   view?: "list" | "grid" | undefined;
   // 楽観更新の書き戻し。一覧の配列は親が持つ
   onMealsChange: (update: (prev: Meal[]) => Meal[]) => void;
+  // 「また記録する」（requirements 19 / ADR-014）: この記録の料理を別の日の記録として新しく
+  // 記録する。記録フォームは親（ホーム）が持つので、引き継ぐ記録を渡して開いてもらう
+  onRecordAgain: (meal: Meal) => void;
   onError: (message: string | null) => void;
 }) {
   // 開いている詳細は「どの記録の何枚目から」で持つ。meal そのものを控えると、開いている間に
@@ -81,6 +85,13 @@ export function MealList({
   const closeDetail = () => {
     setDetail(null);
     setDetailEditing(false);
+  };
+  // 詳細から押したときは詳細を閉じてから記録フォームへ（modal を 2 枚重ねない）。閉じるのは
+  // MealDetailDialog の useLayoutEffect、記録フォームが開くのは親の useEffect なので、この順で走る —
+  // 逆だと、詳細が閉じるときの焦点の戻しが開いたばかりの記録フォームから焦点を奪う
+  const recordAgain = (m: Meal) => {
+    closeDetail();
+    onRecordAgain(m);
   };
 
   const toggle = async (m: Meal) => {
@@ -140,6 +151,7 @@ export function MealList({
                   onPhotosChange={setPhotos}
                   onToggle={toggle}
                   onRemove={remove}
+                  onRecordAgain={recordAgain}
                   onOpenDetail={openDetail}
                   onError={onError}
                 />
@@ -160,6 +172,7 @@ export function MealList({
         onPhotosChange={setPhotos}
         onToggle={toggle}
         onRemove={remove}
+        onRecordAgain={recordAgain}
         onClose={closeDetail}
         onError={onError}
       />
@@ -189,12 +202,13 @@ type MealItemProps = {
   onPhotosChange: (mealId: string, update: (photos: MealPhoto[]) => MealPhoto[]) => void;
   onToggle: (m: Meal) => void;
   onRemove: (m: Meal) => void;
+  onRecordAgain: (m: Meal) => void;
   onOpenDetail: (meal: Meal, index: number) => void;
   onError: (message: string | null) => void;
 };
 
 function MealItem(props: MealItemProps) {
-  const { spaceId, meal, editing, onEdit, onToggle, onRemove, onOpenDetail } = props;
+  const { spaceId, meal, editing, onEdit, onToggle, onRemove, onRecordAgain, onOpenDetail } = props;
   // 閉じたときに「編集」へ焦点を戻す（フォームごと消えると焦点が body に落ちる）
   const editButton = useRef<HTMLButtonElement>(null);
   const wasEditing = useRef(false);
@@ -259,6 +273,10 @@ function MealItem(props: MealItemProps) {
           >
             <span aria-hidden="true">{meal.mataTabetai ? "♥" : "♡"}</span> またたべたい
             <span className="visually-hidden">（{meal.name}）</span>
+          </button>
+          {/* 同じ料理を別の日に新しく記録する（requirements 19）。この記録は動かない */}
+          <button type="button" className="btn btn--small" onClick={() => onRecordAgain(meal)}>
+            また記録する<span className="visually-hidden">（{meal.name}）</span>
           </button>
           <button ref={editButton} type="button" className="btn btn--small" onClick={onEdit}>
             編集<span className="visually-hidden">（{meal.name}）</span>
@@ -710,6 +728,7 @@ function MealDetailDialog({
   onPhotosChange,
   onToggle,
   onRemove,
+  onRecordAgain,
   onClose,
   onError,
 }: {
@@ -724,6 +743,7 @@ function MealDetailDialog({
   onPhotosChange: (mealId: string, update: (photos: MealPhoto[]) => MealPhoto[]) => void;
   onToggle: (m: Meal) => void;
   onRemove: (m: Meal) => void;
+  onRecordAgain: (m: Meal) => void;
   onClose: () => void;
   onError: (message: string | null) => void;
 }) {
@@ -827,15 +847,25 @@ function MealDetailDialog({
                   })}
                 </p>
                 <div className="row row--between">
-                  <button
-                    type="button"
-                    className="btn btn--small"
-                    aria-pressed={meal.mataTabetai}
-                    onClick={() => onToggle(meal)}
-                  >
-                    <span aria-hidden="true">{meal.mataTabetai ? "♥" : "♡"}</span> またたべたい
-                    <span className="visually-hidden">（{meal.name}）</span>
-                  </button>
+                  {/* 左は「次の献立」の側（♥ と また記録する）、右はこの記録を直す・消す側 */}
+                  <div className="row">
+                    <button
+                      type="button"
+                      className="btn btn--small"
+                      aria-pressed={meal.mataTabetai}
+                      onClick={() => onToggle(meal)}
+                    >
+                      <span aria-hidden="true">{meal.mataTabetai ? "♥" : "♡"}</span> またたべたい
+                      <span className="visually-hidden">（{meal.name}）</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--small"
+                      onClick={() => onRecordAgain(meal)}
+                    >
+                      また記録する<span className="visually-hidden">（{meal.name}）</span>
+                    </button>
+                  </div>
                   <div className="row">
                     <button type="button" className="btn btn--small" onClick={onEdit}>
                       編集<span className="visually-hidden">（{meal.name}）</span>
