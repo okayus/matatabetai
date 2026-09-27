@@ -36,6 +36,7 @@
 - [x] 写真から開く記録の詳細（[requirements](requirements.md) 16: 送りの操作を写真の上に・そこから編集）— [ADR-011](adr/011-meal-detail.md)。2026-09-06 追加
 - [x] 誰が作った料理かを記録（[requirements](requirements.md) 17: スペースの参加者から複数選択）— [ADR-012](adr/012-meal-cooks.md)。2026-09-07 追加
 - [x] 記録から同じ料理を別の日に記録する「また記録する」（[requirements](requirements.md) 19）— [ADR-014](adr/014-record-again.md)。2026-09-27 追加
+- [x] 写真の壁のセルを 1 秒ごとに切り替える（[requirements](requirements.md) 13 改訂: 複数枚は巡らせ、動きを減らす設定では 1 枚目のまま）— 2026-09-27 追加
 
 ## Phase 5 — 外へつなぐ
 
