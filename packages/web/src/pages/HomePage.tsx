@@ -39,7 +39,13 @@ import {
   toggleFilterTag,
   type MealFilter,
 } from "../lib/meal-filter";
-import { applySuggestion, emptyMealForm, toMealContentBody, type MealFormState } from "../lib/meal-form";
+import {
+  applyCarryOver,
+  carryOverFrom,
+  emptyMealForm,
+  toMealContentBody,
+  type MealFormState,
+} from "../lib/meal-form";
 import { sortByRecency } from "../lib/meal-order";
 import { primarySpace } from "../lib/space";
 import { navigate, useSearch } from "../router";
@@ -74,6 +80,10 @@ export function HomePage({ me }: { me: Me }) {
   );
 }
 
+// 記録から「また記録する」の依頼（requirements 19 / ADR-014）。押すたびに新しいオブジェクトにする —
+// 記録フォームは参照の同一性で「新しい依頼」を見分けるので、同じ記録を続けて押してもそのたび引き継ぎ直す
+type RecordAgain = { meal: Meal };
+
 function MealsSection({
   space,
   meId,
@@ -96,6 +106,8 @@ function MealsSection({
   const [view, setView] = useState<"list" | "grid">("grid");
   // 記録フォームは <dialog>（requirements 14）。押して開くまでページに出ない
   const [composing, setComposing] = useState(false);
+  // 記録の「また記録する」から開いたとき、その記録の料理をフォームに引き継ぐ
+  const [recordAgain, setRecordAgain] = useState<RecordAgain | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadTags = useCallback(async () => {
@@ -188,6 +200,10 @@ function MealsSection({
             cookOptions={cookOptions}
             view={view}
             onMealsChange={(update) => setMeals((prev) => update(prev ?? []))}
+            onRecordAgain={(meal) => {
+              setRecordAgain({ meal });
+              setComposing(true);
+            }}
             onError={setError}
           />
         )}
@@ -196,6 +212,7 @@ function MealsSection({
         spaceId={space.id}
         cookOptions={cookOptions}
         open={composing}
+        recordAgain={recordAgain}
         onClose={() => setComposing(false)}
         onCreated={onCreated}
       />
@@ -307,17 +324,20 @@ type PendingPhoto = { key: string; prepared: PreparedPhoto; previewUrl: string }
 // 閉じても入力は捨てない: フォームは閉じた dialog の中にそのまま残るので、途中で閉じても
 // やり直しにならない（送れたときだけ空にする）。
 // サジェストは開いている間だけ読む — ホームを眺めるだけの読み込みにリクエストを足さないし、
-// 開くたびに読み直すので、記録の増減に追従させる再読込の配線が要らない（modal の間、記録は動かない）
+// 開くたびに読み直すので、記録の増減に追従させる再読込の配線が要らない（modal の間、記録は動かない）。
+// 記録の「また記録する」から開いたときは、その記録の料理をサジェストの札と同じ形で引き継ぐ（requirements 19）
 function MealFormDialog({
   spaceId,
   cookOptions,
   open,
+  recordAgain,
   onClose,
   onCreated,
 }: {
   spaceId: string;
   cookOptions: MealCook[];
   open: boolean;
+  recordAgain: RecordAgain | null;
   onClose: () => void;
   onCreated: (m: Meal) => void;
 }) {
@@ -325,7 +345,12 @@ function MealFormDialog({
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      // フォームは閉じても mount されたままなので、前回閉じたときのスクロール位置が残る。
+      // 開くたび先頭から — 引き継いで開いたときに料理名と知らせが見えるように
+      dialog.scrollTop = 0;
+    }
     if (!open && dialog.open) dialog.close();
   }, [open]);
 
@@ -335,6 +360,18 @@ function MealFormDialog({
   const [busy, setBusy] = useState(false);
   // 引き継いだことの知らせ（読み上げは role="status"）
   const [carriedOver, setCarriedOver] = useState<string | null>(null);
+  // 記録から来た引き継ぎ。描画中に props の変化を見て state を合わせる（MealSearch の draft と同じ形）。
+  // 依頼が同じ間は何もしないので、閉じて開き直しても引き継ぎ直さない（書きかけを消さない）
+  const [seenRecordAgain, setSeenRecordAgain] = useState<RecordAgain | null>(null);
+  if (recordAgain !== seenRecordAgain) {
+    setSeenRecordAgain(recordAgain);
+    if (recordAgain) {
+      setForm(applyCarryOver(form, carryOverFrom(recordAgain.meal)));
+      setCarriedOver(
+        `「${recordAgain.meal.name}」（${formatEatenOn(recordAgain.meal.eatenOn)} の記録）の内容を引き継ぎました。日付とひとことメモは今回の分をどうぞ。`,
+      );
+    }
+  }
 
   const set = <K extends keyof MealFormState>(key: K, value: MealFormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -439,15 +476,16 @@ function MealFormDialog({
                   <SuggestionPicker
                     spaceId={spaceId}
                     onPick={(s) => {
-                      setForm((f) => applySuggestion(f, s));
-                      setCarriedOver(s.name);
+                      setForm((f) => applyCarryOver(f, s));
+                      setCarriedOver(
+                        `「${s.name}」の前回の内容を引き継ぎました。日付とひとことメモは今回の分をどうぞ。`,
+                      );
                     }}
                   />
                 )}
                 {/* 空でも要素を残す（後から現れる live region は読み上げられないことがある） */}
                 <p className="hint status-line" role="status">
-                  {carriedOver &&
-                    `「${carriedOver}」の前回の内容を引き継ぎました。日付とひとことメモは今回の分をどうぞ。`}
+                  {carriedOver}
                 </p>
               </>
             }

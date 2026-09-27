@@ -1,4 +1,12 @@
-import type { Meal, MealContentBody, MealSuggestion, MealTag, MealType } from "../api";
+import type {
+  LinkPreviewKind,
+  Meal,
+  MealContentBody,
+  MealLink,
+  MealLinks,
+  MealTag,
+  MealType,
+} from "../api";
 
 // 投稿フォームの入力状態。DOM ではなくこの値が唯一の出所（サジェストが上書きするので
 // 非制御のままでは引き継ぎができない）。送信直前に MealContentBody へ畳む
@@ -83,18 +91,39 @@ export function formatTagInput(tags: readonly MealTag[]): string {
   return tags.map((t) => t.name).join(" ");
 }
 
-// サジェストを選んだときに引き継ぐのは 料理名 / リンク 2 種・作り方メモ / タグ（requirements 8）。
+// 引き継ぐ中身 = 料理の属性（料理名 / リンク 2 種・作り方メモ / タグ）。サジェストの札
+// （MealSuggestion はこの形を含む）も、記録の「また記録する」（carryOverFrom）も同じ形で渡す
+export type MealCarryOver = MealLinks & { name: string; tags: readonly MealTag[] };
+
+// 引き継ぐのは 料理名 / リンク 2 種・作り方メモ / タグ だけ（requirements 8 / 19）。
 // 3 項目は料理の属性なので引き継ぎ、食べた日・タイミングは今回の食事のもの、
 // メモはその回のエピソードなので引き継がない（ADR-007 §1）。
 // 作った人も引き継がない — 同じ料理でも作る人は回ごとに変わる（ADR-012 §5）
-export function applySuggestion(form: MealFormState, suggestion: MealSuggestion): MealFormState {
+export function applyCarryOver(form: MealFormState, carry: MealCarryOver): MealFormState {
   return {
     ...form,
-    name: suggestion.name,
-    tags: formatTagInput(suggestion.tags),
-    recipeUrls: urlRows(suggestion.recipeUrls),
-    shopUrls: urlRows(suggestion.shopUrls),
-    recipeMemo: suggestion.recipeMemo ?? "",
+    name: carry.name,
+    tags: formatTagInput(carry.tags),
+    recipeUrls: urlRows(carry.recipeUrls),
+    shopUrls: urlRows(carry.shopUrls),
+    recipeMemo: carry.recipeMemo ?? "",
+  };
+}
+
+function urlsOfKind(links: readonly MealLink[], kind: LinkPreviewKind): string[] {
+  return links.flatMap((l) => (l.kind === kind ? [l.url] : []));
+}
+
+// 記録から「また記録する」ときに引き継ぐ中身（requirements 19、ADR-014）。サジェストの札と同じ
+// 料理の属性だけで、写真・♥・その回のもの（日付・タイミング・メモ・作った人）は入れない —
+// 前の写真が今回の記録に付くのは事実として誤り（ADR-005 §5）
+export function carryOverFrom(meal: Meal): MealCarryOver {
+  return {
+    name: meal.name,
+    tags: meal.tags,
+    recipeUrls: urlsOfKind(meal.links, "recipe"),
+    shopUrls: urlsOfKind(meal.links, "shop"),
+    recipeMemo: meal.recipeMemo,
   };
 }
 
@@ -106,8 +135,8 @@ export function mealFormFrom(meal: Meal): MealFormState {
     eatenOn: meal.eatenOn,
     mealType: meal.mealType ?? "",
     tags: formatTagInput(meal.tags),
-    recipeUrls: urlRows(meal.links.flatMap((l) => (l.kind === "recipe" ? [l.url] : []))),
-    shopUrls: urlRows(meal.links.flatMap((l) => (l.kind === "shop" ? [l.url] : []))),
+    recipeUrls: urlRows(urlsOfKind(meal.links, "recipe")),
+    shopUrls: urlRows(urlsOfKind(meal.links, "shop")),
     recipeMemo: meal.recipeMemo ?? "",
     note: meal.note ?? "",
     cookUserIds: meal.cooks.map((c) => c.userId),

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Meal, MealSuggestion } from "../api";
 import {
   addUrlRow,
-  applySuggestion,
+  applyCarryOver,
+  carryOverFrom,
   emptyMealForm,
   formatTagInput,
   mealFormFrom,
@@ -159,9 +160,9 @@ describe("urlFieldLabel", () => {
   });
 });
 
-describe("applySuggestion", () => {
+describe("applyCarryOver", () => {
   it("料理名・タグ・リンク 2 種・作り方メモを引き継ぐ（URL は本数ぶん全部）", () => {
-    const form = applySuggestion(emptyMealForm("2026-09-02"), suggestion({
+    const form = applyCarryOver(emptyMealForm("2026-09-02"), suggestion({
       recipeUrls: ["https://example.com/recipe", "https://example.com/recipe2"],
       shopUrls: ["https://shop.example.com/item"],
       recipeMemo: "みりん多め",
@@ -181,7 +182,7 @@ describe("applySuggestion", () => {
   });
 
   it("食べた日・タイミング・メモ・作った人は今回の食事のものなので引き継がない", () => {
-    const form = applySuggestion({ ...filled, cookUserIds: ["u2"] }, suggestion());
+    const form = applyCarryOver({ ...filled, cookUserIds: ["u2"] }, suggestion());
     expect(form.eatenOn).toBe("2026-09-02");
     expect(form.mealType).toBe("dinner");
     expect(form.note).toBe(" おかわりした ");
@@ -196,14 +197,83 @@ describe("applySuggestion", () => {
       shopUrls: ["https://old-shop.example"],
       recipeMemo: "前の作り方メモ",
     };
-    const after = applySuggestion(before, suggestion());
+    const after = applyCarryOver(before, suggestion());
     expect(after.recipeUrls).toEqual([""]);
     expect(after.shopUrls).toEqual([""]);
     expect(after.recipeMemo).toBe("");
   });
 
   it("タグの無い料理を選んだらタグ欄も空になる（前の入力が混ざらない）", () => {
-    expect(applySuggestion(filled, suggestion({ tags: [] })).tags).toBe("");
+    expect(applyCarryOver(filled, suggestion({ tags: [] })).tags).toBe("");
+  });
+});
+
+// 記録から「また記録する」（requirements 19 / ADR-014）。サジェストの札と同じ属性だけを取り出す —
+// 写真・♥・その回のもの（日付・タイミング・メモ・作った人）が混ざらないことが要
+describe("carryOverFrom", () => {
+  it("料理名・タグ・リンク 2 種（kind ごとに入力順）・作り方メモを取り出す", () => {
+    expect(
+      carryOverFrom(
+        meal({
+          note: "おかわりした",
+          links: [
+            { id: "l1", kind: "recipe", url: "https://example.com/recipe", preview: { status: "ok", title: "肉じゃが", description: null, siteName: null, hasImage: false } },
+            { id: "l2", kind: "shop", url: "https://shop.example.com/item", preview: { status: "pending" } },
+            { id: "l3", kind: "recipe", url: "https://example.com/recipe2", preview: { status: "failed" } },
+          ],
+          recipeMemo: "みりん多め",
+          tags: [
+            { id: "t1", name: "じゃがいも" },
+            { id: "t2", name: "牛肉" },
+          ],
+          cooks: [{ userId: "u2", displayName: "みか" }],
+          photos: [{ id: "p1", width: 1600, height: 1200, hasThumb: true, createdAt: "2026-09-02T10:00:00.000Z" }],
+        }),
+      ),
+    ).toEqual({
+      name: "肉じゃが",
+      tags: [
+        { id: "t1", name: "じゃがいも" },
+        { id: "t2", name: "牛肉" },
+      ],
+      recipeUrls: ["https://example.com/recipe", "https://example.com/recipe2"],
+      shopUrls: ["https://shop.example.com/item"],
+      recipeMemo: "みりん多め",
+    });
+  });
+
+  it("フォームに当てると料理の属性だけが変わり、日付・タイミング・メモ・作った人は今回のまま", () => {
+    const form = applyCarryOver(
+      { ...emptyMealForm("2026-09-27"), mealType: "lunch", note: "今日のメモ", cookUserIds: ["u9"] },
+      carryOverFrom(
+        meal({
+          eatenOn: "2026-09-02",
+          note: "おかわりした",
+          recipeMemo: "みりん多め",
+          tags: [{ id: "t1", name: "じゃがいも" }],
+          cooks: [{ userId: "u2", displayName: "みか" }],
+        }),
+      ),
+    );
+    expect(form).toEqual({
+      name: "肉じゃが",
+      eatenOn: "2026-09-27",
+      mealType: "lunch",
+      tags: "じゃがいも",
+      recipeUrls: [""],
+      shopUrls: [""],
+      recipeMemo: "みりん多め",
+      note: "今日のメモ",
+      cookUserIds: ["u9"],
+    });
+  });
+
+  it("リンクもタグも無い記録なら欄は空（URL 欄は空の 1 行）", () => {
+    const form = applyCarryOver(filled, carryOverFrom(meal({ recipeMemo: null })));
+    expect(form.tags).toBe("");
+    expect(form.recipeUrls).toEqual([""]);
+    expect(form.shopUrls).toEqual([""]);
+    expect(form.recipeMemo).toBe("");
   });
 });
 
