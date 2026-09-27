@@ -3,6 +3,7 @@
 1 行 = 1 節目（PR の merge・ADR・人手作業の完了・本番の状態変化）。`- YYYY-MM-DD 何を（#PR / ADR / skill）`。
 自動ロードはされない。必要なら `head -20 docs/log.md`。作業中の試行錯誤は書かない（git log と PR にある）。
 
+- 2026-09-27 #73 を merge・本番稼働 — 記録から同じ料理を別の日に「また記録する」（requirements 19、[ADR-014](adr/014-record-again.md)）。詳細と くわしく の行から記録フォームを開き、サジェストの札と同じ属性（料理名・リンク 2 種・作り方メモ・タグ）だけを引き継ぐ（`carryOverFrom` → `applyCarryOver` に一本化）。写真・メモ・作った人・♥ は引き継がず、詳細は閉じてから開く。ついでに記録フォームが開くたび先頭へスクロールするように（閉じても mount されたままで前回の位置が残っていた）。migration なし、unit 203、e2e 4 spec 8 passed（cold start の 1 回目だけ example.com のプレビュー取得の 5 秒待ちで golden path が落ちた — 環境要因、再実行で通る）。Workers Builds success
 - 2026-09-20 D1 の週次バックアップが稼働 — ホストの systemd timer（日曜 04:40、`~/backups/d1/matatabetai/`、skill `cloudflare-d1-keyless-host-backup` = okayus-skills#43）。初回 dump で本番を実測: migration は 0007 まで、users 2 / meals 28 / meal_cooks 9、外部キー違反なし。`wrangler d1 export` の生 dump は親テーブル順でなく D1 に戻せないので、復元は `d1-restore-sql.mjs` を通す
 - 2026-09-15 #68 を merge — [ADR-013](adr/013-kokemusu-daily-push.md) kokemusu への日次投稿（自分が作った料理を 1 日 1 苔片で。日次 Cron 00:15 JST、実装は次の PR）
 - 2026-09-14 #69 を merge — `modern-web-guidance` を 2026_09_04 版に更新（更新は `npx skills add … --copy` を打ち直す）
