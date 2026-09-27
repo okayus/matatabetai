@@ -362,16 +362,28 @@
     overflow: hidden;
     cursor: pointer;
   }
-  .photo-cell img {
+  /* 複数枚は同じ枡に重ねて置き（PhotoGrid.tsx）、見せる 1 枚だけを不透明に。枡の大きさはボタンの
+     aspect-ratio が決めるので、写真は絶対配置で枡いっぱいに。見せる 1 枚を上に出す（z-index）のは、
+     切り替えの溶かし込みで次の 1 枚が前の 1 枚の上に重なるため（下の prefers-reduced-motion） */
+  .photo-cell__photo {
+    position: absolute;
+    inset: 0;
     display: block;
     inline-size: 100%;
     block-size: 100%;
     object-fit: cover;
+    opacity: 0;
   }
-  /* 写真の上に重ねる印（♥ = またたべたい、⧉ = まだある）。写真の明暗によらず読めるよう暗い座布団 */
+  .photo-cell__photo--shown {
+    z-index: 1;
+    opacity: 1;
+  }
+  /* 写真の上に重ねる印（♥ = またたべたい、⧉ = まだある）。写真の明暗によらず読めるよう暗い座布団。
+     見せている写真（z-index: 1）より上 */
   .photo-cell__mata,
   .photo-cell__count {
     position: absolute;
+    z-index: 2;
     display: inline-flex;
     align-items: center;
     padding: 2px var(--space-1);
@@ -837,6 +849,15 @@
   }
   .photo-carousel {
     scroll-behavior: smooth;
+  }
+  /* 壁のセルの写真の切り替え（1 秒ごと — PhotoGrid.tsx）。ぱっと替えると壁全体が毎秒またたくので、
+     次の 1 枚を前の 1 枚の上に短く溶かして出す。前の 1 枚は溶け終わるまで消さない（両方を同時に
+     薄めると途中で背景が透けて明滅する） */
+  .photo-cell__photo {
+    transition: opacity 0s 200ms;
+  }
+  .photo-cell__photo--shown {
+    transition: opacity 200ms;
   }
 }
 

@@ -129,8 +129,9 @@ export function MealList({
         <PhotoGrid
           spaceId={spaceId}
           meals={meals}
-          // セルの飛び先は記録の詳細。代表（1 枚目）から開き、中で残りを送れる
-          onOpenCell={(meal) => openDetail(meal, 0)}
+          // セルの飛び先は記録の詳細。セルに見えていた 1 枚から開き（巡っている途中なら
+          // その 1 枚 — 目に留まった写真がそのまま大きくなる）、中で残りを送れる
+          onOpenCell={openDetail}
         />
       ) : (
         groupByEatenOn(meals).map(([date, items]) => (
