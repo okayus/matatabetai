@@ -126,7 +126,7 @@ def main() -> int:
         f"  docker compose exec -T dev <同じコマンド>\n"
         f"\n"
         f"dev サーバーの URL はコンテナ内なら既定の 5173。"
-        f"ホストのブラウザから見る時だけ 5473。",
+        f"ホストのブラウザから見る時だけ 5573。",
         file=sys.stderr,
     )
     return 2

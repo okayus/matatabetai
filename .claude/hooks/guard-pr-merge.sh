@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# PreToolUse(Bash): gh pr merge を次のときに止める（exit 2 = 拒否。stderr が Claude に返る）。
+#  - --auto --squash 以外の形。即時 merge は required check を待たず、--admin は管理者権限で要件を飛ばそうとする
+#  - packages/web/drizzle/ を含む PR に D1 Time Travel の bookmark コメントが無い。merge が本番 D1 への適用になる
+# PR の中身を確かめられないときも止める。migration を素通しにしないため。
+# コマンドの文字列に gh pr merge が含まれるだけで検査する。bash -c で包んだ merge も止めるためで、
+# grep の引数や commit メッセージにこの文字列があっても止まる（Grep ツールはこの hook を通らない）。
+set -u
+set -f
+
+deny() {
+  echo "guard-pr-merge: $1" >&2
+  exit 2
+}
+
+input=$(cat)
+case "$input" in
+  *"gh pr merge"*) ;;
+  *) exit 0 ;;
+esac
+command -v jq >/dev/null 2>&1 || deny "jq が無いので gh pr merge を検査できない"
+cmd=$(jq -r '.tool_input.command // empty' <<<"$input")
+case "$cmd" in
+  *"gh pr merge"*) ;;
+  *) exit 0 ;;
+esac
+
+[ "$(grep -o 'gh pr merge' <<<"$cmd" | wc -l)" -eq 1 ] || deny "gh pr merge は 1 回に 1 PR だけにする"
+# この gh pr merge の引数だけを見る。語に付いた区切り記号（"71;"）と改行も文の切れ目にする
+rest=${cmd#*gh pr merge}
+rest=${rest//[;&|]/ ; }
+rest=${rest//$'\n'/ ; }
+args=" ${rest%%;*} "
+case "$args" in *" --admin"*) deny "--admin は使わない（管理者権限で要件を飛ばす形）" ;; esac
+case "$args" in *" --auto "*) ;; *) deny "merge は gh pr merge --auto --squash <PR番号> の形だけ（required check を待たせる）" ;; esac
+case "$args" in *" --squash "* | *" -s "*) ;; *) deny "merge は --squash で行う" ;; esac
+
+pr=""
+for tok in $args; do
+  case "$tok" in
+    -*) ;;
+    */pull/[0-9]*)
+      pr=${tok##*/pull/}
+      pr=${pr%%[!0-9]*}
+      break
+      ;;
+    *[!0-9]*) ;;
+    *)
+      pr=$tok
+      break
+      ;;
+  esac
+done
+[ -n "$pr" ] || pr=$(gh pr view --json number -q .number 2>/dev/null) || true
+[ -n "$pr" ] || deny "対象の PR を決められない（gh pr merge --auto --squash <PR番号> と書く）"
+
+files=$(gh pr view "$pr" --json files -q '.files[].path' 2>/dev/null) ||
+  deny "PR #$pr の変更ファイルを取得できない（gh の認証かネットワークを確かめる）"
+if grep -q '^packages/web/drizzle/' <<<"$files"; then
+  comments=$(gh pr view "$pr" --json comments -q '.comments[].body' 2>/dev/null) ||
+    deny "PR #$pr のコメントを取得できない"
+  grep -q 'D1 Time Travel bookmark' <<<"$comments" ||
+    deny "PR #$pr は migration を含むのに D1 Time Travel の bookmark コメントが無い。持ち主にホストで node ~/.config/d1-backup/d1-bookmark.mjs matatabetai $pr を実行してもらう"
+fi
+exit 0

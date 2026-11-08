@@ -94,13 +94,15 @@ services:
     # - pnpm lives in the container layer and vanishes on recreation, so reinstall it too
     #   (pnpm@10 to match CI's pnpm/action-setup version).
     # - git: credential helper = inline sh that echoes $GH_TOKEN at push time (nothing
-    #   under ~/.git-credentials; the variable exists only in ./shell.sh shells).\n    #   ~/.gitconfig is container-layer, so it is re-applied
+    #   under ~/.git-credentials; the variable exists only in ./shell.sh shells).
+    #   ~/.gitconfig is container-layer, so it is re-applied
     #   every start. `$$` = literal `$` (compose interpolates `$VAR` at parse time).
     #   The sandbox git identity comes from the GIT_* env above.
     # - defaultMode=bypassPermissions is written into the CONTAINER-scope user settings
     #   (named volume), NOT the repo-shared .claude/settings.json — host sessions keep
-    #   normal prompting. Safe here because the firewall is the boundary and deny rules
-    #   (force push / main / gh pr merge / gh auth / gh api) still apply in bypass mode.
+    #   normal prompting. Safe here because the firewall is the boundary, and the deny
+    #   rules (force push / main / --delete / gh auth / gh api / npx skills update) and
+    #   the PreToolUse hooks in .claude/hooks still apply in bypass mode.
     # - No step may kill the container on failure (fall back to image-baked versions).
     command: >
       sh -c "sudo /usr/local/bin/init-firewall.sh &&
