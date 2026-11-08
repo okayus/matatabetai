@@ -1,6 +1,6 @@
 ---
 name: merge
-description: PR を merge して本番反映まで見届け、ローカルを片付ける定型。持ち主が「マージして」「merge して」と PR の merge を明示的に頼んだとき、または /merge と打ったときに使う。migration を含む PR は、D1 Time Travel の bookmark が PR にコメントされていなければ merge しない。自分の判断で merge を始めるためには使わない。
+description: PR を merge して本番反映まで見届け、ローカルを片付ける定型。持ち主が「マージして」「merge して」「merge まで進めて」と PR の merge を明示的に頼んだとき、または /merge と打ったときに使う。migration を含む PR は、D1 Time Travel の bookmark が PR にコメントされていなければ merge しない。自分の判断で merge を始めるためには使わない。
 effort: medium
 argument-hint: "[PR番号（省略時は現在のブランチの PR）]"
 ---
@@ -14,7 +14,7 @@ argument-hint: "[PR番号（省略時は現在のブランチの PR）]"
 1. **対象の確認**: `gh pr view <PR> --json number,title,state,mergeStateStatus,headRefName,files`。`MERGED` なら 5 へ。`CLOSED` なら報告して終わる。
 2. **関門**（触っているパスで決まる。CLAUDE.md の git 規約と同じ）:
    - `packages/web/drizzle/` / `.github/**` / `.claude/**` / `docs/adr/**` を含む = 持ち主が差分を見てから merge する PR。該当ファイルの一覧を示し、AskUserQuestion で「差分を見たか」を 1 回だけ確認する。見ていなければ終わる。
-   - そのうち `packages/web/drizzle/` を含む = **migration**。`gh pr view <PR> --comments` に、24 時間以内の「D1 Time Travel bookmark」のコメントがあるかを見る（hook `guard-pr-merge` も同じ条件で止める）。**無ければ merge しない**。次の 1 行を案内して終わる（コンテナは Cloudflare の資格情報を持たないので、ホストでしか取れない）: `node ~/.config/d1-backup/d1-bookmark.mjs matatabetai <PR>`。bookmark があれば続ける。既存行の書き換え・テーブルの再構築・DROP を含むなら、PR 本文に戻し方が書いてあることも見る。
+   - そのうち `packages/web/drizzle/` を含む = **migration**。`gh pr view <PR> --comments` に、24 時間以内の「D1 Time Travel bookmark」のコメントがあるかを見る（hook `guard-pr-merge` も同じ条件で止める）。**無ければ merge しない**。次の 1 行を持ち主に案内して終わる。ホストのセッションでも Claude は打たず、持ち主が打つ（コンテナは Cloudflare の資格情報も持たない）: `node ~/.config/d1-backup/d1-bookmark.mjs matatabetai <PR>`。bookmark があれば続ける。既存行の書き換え・テーブルの再構築・DROP を含むなら、PR 本文に戻し方が書いてあることも見る。
    - それ以外はそのまま続ける。
 3. **CI と e2e**: `gh pr checks <PR>`。red なら merge せず、失敗した job と最初のエラーを報告して終わる。pending は待ってよい。`packages/web/` か依存（`package.json`・`pnpm-lock.yaml`）を変える PR は、PR に `pnpm e2e` の結果が書かれていることも見る。無ければコンテナで流す（ホストのセッションなら `docker compose exec -T dev pnpm e2e`）。落ちたら merge せず報告して終わる。
 4. **merge**: `gh pr merge --auto --squash <PR>`（`--auto` なしの即時 merge は、下の clean status のときだけ）。merge されるまで見届ける。待つときは Monitor の until ループを使う（`sleep N && …` の連結はハーネスに止められる）:

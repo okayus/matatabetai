@@ -50,7 +50,7 @@ pnpm e2e          # build → wrangler dev（ビルド成果物、127.0.0.1:5183
 pnpm e2e:server   # サーバーだけ立てておくと 2 回目以降が速い
 ```
 
-ローカル D1 の dev データは**全消し**される（global-setup）。vars は `--var` で渡すので `.dev.vars` は使わない。詳細と詰まりどころは `packages/web/e2e/README.md`（skill `cloudflare-workers-e2e-playwright` / `playwright-e2e-in-docker-sandbox`）。CI では回さない — merge 前にここで流す。
+ローカル D1 の dev データは**全消し**される（global-setup。dev で登録した passkey も消える）。e2e は dev と同じ `packages/web/.wrangler/state` を使うので、消えて困るなら先に退避する。vars は `--var` で渡すので `.dev.vars` は使わない。詳細と詰まりどころは `packages/web/e2e/README.md`（skill `cloudflare-workers-e2e-playwright` / `playwright-e2e-in-docker-sandbox`）。CI では回さない — merge 前にここで流す。
 
 ## GitHub token の運用
 
