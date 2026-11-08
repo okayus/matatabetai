@@ -10,12 +10,12 @@
 ## このアプリは何のためにあるか
 
 - 目的は記録そのものではなく、過去の食事を振り返って楽しむことと、「またたべたい」を次の献立の起点にすることの 2 つ。機能・文言・UI に迷ったら、この 2 つに寄与するかで決める。記録の正確さ・網羅性・カロリー計算のような汎用の食事記録アプリの方向には進まない。
-- 使うのは家族数人で、UX は身内の内輪感を許してよい。将来の一般公開に備えて、認証・認可・bot scan 対策・レート制限は公開を前提に作る。
+- 家族数人だけが使う閉じた SNS。UX はインスタ風だが、身内の内輪感を許してよく、対外的な見栄えは二の次。将来の一般公開に備えて、認証・認可・bot scan 対策・レート制限は公開を前提に作る。
 - 「お気に入り」は UI では「またたべたい」と呼ぶ。
 
 ## 確定済みの決定（根拠は ADR）
 
-- 認可の境界は家族単位の「スペース」。リソースは必ずいずれかのスペースに属する（親の `meals` は `space_id NOT NULL`、子は親を通して属する）。`/api/spaces/:spaceId/*` は `spaceMiddleware` で所属を確かめ、所属外には 404 を返す（403 は存在を漏らす）。`created_by` は表示と監査のためのもので、認可に使わない（ADR-001 §3、ADR-002）。
+- 認可の境界は家族単位の「スペース」で、一般公開の後も変えない。リソースは必ずいずれかのスペースに属する（親の `meals` は `space_id NOT NULL`、子は親を通して属する）。`/api/spaces/:spaceId/*` は `spaceMiddleware` で所属を確かめ、所属外には 404 を返す（403 は存在を漏らす）。`created_by` は表示と監査のためのもので、認可に使わない（ADR-001 §3、ADR-002）。
 - 認証は passkey だけの招待制で、パスワード・OAuth・Cloudflare Access は使わない（ADR-001 §2）。登録の経路は、初回の owner（`INITIAL_REGISTRATION_TOKEN`）、招待リンク、ログイン中の端末追加の 3 つだけ。
 - 本番 URL と WebAuthn の RP_ID は `matatabetai.shiraoka.workers.dev`。passkey を登録した後にホストを変えると既存の credential がすべて無効になるので、`wrangler.jsonc` の `name` / `vars.RP_ID` / `vars.ORIGIN` は変えない。
 - 写真は private R2 に置き、Worker が中継して配る。public bucket・`r2.dev`・公開オリジン前提の画像変換は使わず、縮小はクライアントで行う（ADR-004）。
@@ -24,7 +24,8 @@
 
 ## コマンドと罠
 
-- 開発はコンテナ内で行う（起動は `./up.sh`）。ルートから `pnpm dev -- --host 0.0.0.0`（ホストからは http://localhost:5573/）、`pnpm check`、`pnpm test`、`pnpm build`。CI と同じ検査は `pnpm run ci`。ローカルの変数は `packages/web/.dev.vars`（`.dev.vars.example` をコピーする）。
+- 開発はコンテナ内で行う（起動は `./up.sh`）。ルートから `pnpm dev -- --host 0.0.0.0`（ホストからは http://localhost:5573/）、`pnpm check`、`pnpm test`、`pnpm build`。CI と同じ検査は `pnpm run ci`。format と lint は入れていない。ローカルの変数は `packages/web/.dev.vars`（`.dev.vars.example` をコピーする）。
+- `worker-configuration.d.ts` は gitignore した生成物で、`pnpm check`（または `pnpm types`）が `wrangler.jsonc` から作る。clone の直後や `wrangler.jsonc` を変えた後に型が合わなければ流し直す。
 - ホストで開いたセッションでは、編集と git はホストで行い、pnpm・npx・wrangler などは `docker compose exec -T dev <コマンド>` でコンテナに投げる。ホストで直に叩くと `require-container` hook が止める（依存のコードが隔離の外で動き、コンテナの `node_modules` も壊れる）。作業ツリーはコンテナと共有しているので、ブランチの切り替えはコンテナ側にも効く。
 - `pnpm e2e` は Playwright の 4 spec で、ローカル D1 の dev データを全部消す。CI では回さない（`packages/web/e2e/README.md`）。
 - migration（`packages/web/drizzle/`）を書く前に skill `cloudflare-d1-drizzle-migration` を読む。生成は `packages/web` で `pnpm db:generate --name <要約>`（`--` を挟むと drizzle-kit が落ちる）、ローカルへの適用は `pnpm db:migrate`。本番への適用は Workers Builds が行うので、手で当てない。
@@ -32,8 +33,8 @@
 ## 書き方
 
 - ドメインは型で不正な状態を表せないようにする（Discriminated Union、Zod、`unique symbol` の Branded Type。例は `packages/web/worker/domain/meal.ts`）。ロジックは純粋関数に寄せ、I/O は境界に置く。
-- エラーは `neverthrow` の `Result` で返し、`throw` で伝えない。`any` と `class` は使わない。抽象化は今の要件に要る分だけにする。
-- ユニットテスト（vitest）は純粋関数の意味を固定するもので、I/O を持ち込まず、モックもしない。モックが要るならそれは e2e の領域。e2e は配線と「存在の事実」を見る数本に保ち、ドメインを網羅しない。
+- エラーは `neverthrow` の `Result` で返し、`throw` で伝えない。`any` と `class` は使わない。抽象化は今の要件に要る分だけにする。型と関数名で伝わることをコメントに書かない。
+- ユニットテスト（vitest）は純粋関数の意味を固定するもので、I/O を持ち込まず、モックもしない。モックが要るならそれは e2e の領域。型で保証済みのことはテストにしない。e2e は配線と「存在の事実」を見る数本に保ち、ドメインを網羅しない。
 - UI はブラウザのネイティブ機能を先に使う（skill `modern-web-guidance`）。Baseline Newly available まで使ってよく、polyfill と重い fallback は入れない。
 - API は記憶で断定せず、公式 docs で確かめる（`cloudflare-docs` MCP、`context7` MCP、各サイトの `/llms.txt`）。コンテナの firewall は allowlist 外の URL を通さない。
 
