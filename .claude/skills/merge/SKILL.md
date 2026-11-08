@@ -17,9 +17,9 @@ argument-hint: "[PR番号（省略時は現在のブランチの PR）]"
    - そのうち `packages/web/drizzle/` を含む = **migration**。`gh pr view <PR> --comments` に、24 時間以内の「D1 Time Travel bookmark」のコメントがあるかを見る（hook `guard-pr-merge` も同じ条件で止める）。**無ければ merge しない**。次の 1 行を案内して終わる（コンテナは Cloudflare の資格情報を持たないので、ホストでしか取れない）: `node ~/.config/d1-backup/d1-bookmark.mjs matatabetai <PR>`。bookmark があれば続ける。既存行の書き換え・テーブルの再構築・DROP を含むなら、PR 本文に戻し方が書いてあることも見る。
    - それ以外はそのまま続ける。
 3. **CI と e2e**: `gh pr checks <PR>`。red なら merge せず、失敗した job と最初のエラーを報告して終わる。pending は待ってよい。`packages/web/` か依存（`package.json`・`pnpm-lock.yaml`）を変える PR は、PR に `pnpm e2e` の結果が書かれていることも見る。無ければコンテナで流す（ホストのセッションなら `docker compose exec -T dev pnpm e2e`）。落ちたら merge せず報告して終わる。
-4. **merge**: `gh pr merge --auto --squash <PR>`（`--auto` なしの即時 merge は使わない）。merge されるまで見届ける。待つときは Monitor の until ループを使う（`sleep N && …` の連結はハーネスに止められる）:
+4. **merge**: `gh pr merge --auto --squash <PR>`（`--auto` なしの即時 merge は、下の clean status のときだけ）。merge されるまで見届ける。待つときは Monitor の until ループを使う（`sleep N && …` の連結はハーネスに止められる）:
    `until [ "$(gh pr view <PR> --json state -q .state)" = MERGED ]; do sleep 10; done`
-   CI が green なのに OPEN のままなら、同じ `gh pr merge --auto --squash <PR>` を打ち直す。
+   CI が green なのに OPEN のままなら、同じ `gh pr merge --auto --squash <PR>` を打ち直す。「Pull request is in clean status」で弾かれたら（コンテナの gh 2.23）、打ち直しても同じなので `gh pr merge --squash <PR>` を使う（hook が clean を確かめる）。
 5. **本番反映の確認**（`docs/` と `*.md` だけの PR は Workers Builds が走らないので飛ばす）: merge commit の sha を `gh pr view <PR> --json mergeCommit -q .mergeCommit.oid` で取り、public リポなので未認証の
    `curl -s https://api.github.com/repos/okayus/matatabetai/commits/<sha>/check-runs`
    で `Workers Builds: matatabetai` が `success` になるのを待つ。そのあと `curl -s -o /dev/null -w '%{http_code}' https://matatabetai.shiraoka.workers.dev/health` が 200。migration を含んでいたら、適用は Workers Builds の deploy command が行う。事後確認の SQL は PR 本文のものを持ち主に渡す（コンテナからは本番 D1 を読めない）。

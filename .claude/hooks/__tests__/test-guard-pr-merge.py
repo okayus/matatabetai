@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """guard-pr-merge.sh の判定表。`python3 .claude/hooks/__tests__/test-guard-pr-merge.py` で実行。
 
-mazuoboeru の同じ hook の試験（41 通り + jq なし 2 通り）を、このリポの名前とパスに移したもの。
+mazuoboeru の同じ hook の試験（48 通り + jq なし 2 通り）を、このリポの名前とパスに移したもの。
 gh は PATH の先頭に置いた偽物に差し替え、`gh pr view <PR> -R <repo> --json …` に下の FIXTURES を返す
 （ネットワークにも GitHub にも出ない）。bookmark の日時は実行時に作るので、日が経っても判定が変わらない。
 CI は回さない（ほかの hook のテストと同じく手動）。
@@ -36,11 +36,17 @@ def iso(delta: timedelta) -> str:
     return (datetime.now(timezone.utc) - delta).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def pr(paths: list[str], comments: list[tuple[str, timedelta]] = (), changed: int | None = None) -> dict:
+def pr(
+    paths: list[str],
+    comments: list[tuple[str, timedelta]] = (),
+    changed: int | None = None,
+    state: str = "",
+) -> dict:
     return {
         "files": [{"path": p} for p in paths],
         "changedFiles": len(paths) if changed is None else changed,
         "comments": [{"body": body, "createdAt": iso(age)} for body, age in comments],
+        "mergeStateStatus": state,
     }
 
 
@@ -55,6 +61,11 @@ FIXTURES = {
     "202": pr([MIGRATION], [("merge 前に D1 Time Travel bookmark を取ってください", timedelta(minutes=5))]),
     "203": pr([f"packages/web/src/f{i}.ts" for i in range(100)], changed=150),  # 一覧が途中で切れている
     "204": pr(["docs/status.md"]),
+    # --auto なしの squash を通すかは mergeStateStatus で決まる（コンテナの gh 2.23 が clean な PR への --auto を弾く）
+    "300": pr(["docs/status.md"], state="CLEAN"),
+    "301": pr(["docs/status.md"], state="BLOCKED"),
+    "302": pr([MIGRATION], state="CLEAN"),
+    "303": pr([MIGRATION], [(BOOKMARK, timedelta(hours=1))], state="CLEAN"),
 }
 
 HEREDOC_MERGE = f"git commit -m \"$(cat <<'EOF'\ndocs: merge の形\n\n{M} 106 --squash は使わない\nEOF\n)\""
@@ -102,6 +113,14 @@ CASES: list[tuple[int, str]] = [
     (BLOCK, f"/usr/bin/{M} 106"),
     (BLOCK, f"git fetch\n{M} 106"),
     (PASS, '{"tool_name":"Read"}'),
+    # --auto なしの squash は clean な PR だけ
+    (PASS, f"{M} --squash 300"),
+    (PASS, f"{M} -s 300"),
+    (BLOCK, f"{M} 300"),
+    (BLOCK, f"{M} --squash 301"),
+    (BLOCK, f"{M} --squash 302"),
+    (PASS, f"{M} --squash 303"),
+    (BLOCK, f"{M} --squash --admin 300"),
 ]
 
 

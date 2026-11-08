@@ -18,7 +18,7 @@ argument-hint: "[一言メモ（任意）]"
 6. **commit → PR → merge**: `git fetch --prune` してから、`origin/main` を base に `claude/handoff-YYYY-MM-DD` を切り（同じ日の 2 回目は `-2`）、`docs(status): <要約>` で commit する。
    - **同名のローカルブランチが前回の handoff から残っていることがある**（squash merge で消えるのはリモート側だけ）。`git switch -c` が「already exists」で落ちたら、その stale なブランチを消して `origin/main` から切り直す。古い base の上に載せると、その後に merge された実装 PR を revert する差分になる。commit したら `git diff --stat origin/main..HEAD` が `docs/` だけであることを見る。
    - **push・`gh pr create`・`gh pr merge --auto --squash` までユーザに確認せず進めてよい**（2026-09-03 のユーザ指示）。docs だけの PR に限る。`docs/adr/**`、`packages/web/drizzle/`、`.github/**`、`.claude/**` を含む PR は、CLAUDE.md どおり持ち主の merge を待つ。
-   - arm したら merge されたかまで見届ける。CI が green なのに OPEN のままなら `gh pr merge --auto --squash <PR番号>` を打ち直す。
+   - arm したら merge されたかまで見届ける。CI が green なのに OPEN のままなら `gh pr merge --auto --squash <PR番号>` を打ち直す。「Pull request is in clean status」で弾かれたら（コンテナの gh 2.23）、`gh pr merge --squash <PR番号>` を使う（hook が clean を確かめる）。
 7. 最後に「次セッションの出発点」（status.md「次の 3 手」の 1 手目）を 1 行で報告する。
 
 ## 書かないもの
