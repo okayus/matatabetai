@@ -1,82 +1,108 @@
 #!/usr/bin/env python3
 """guard-pr-merge.sh の判定表。`python3 .claude/hooks/__tests__/test-guard-pr-merge.py` で実行。
 
-gh は PATH の先頭に置いた偽物に差し替える（ネットワークにも GitHub にも出ない）。
-偽物は環境変数で答えを変える: FAKE_FILES（変更ファイル）、FAKE_COMMENTS（コメント）、
-FAKE_CURRENT（今のブランチの PR 番号）、FAKE_FAIL（files / comments で失敗させる）。
+mazuoboeru の同じ hook の試験（41 通り + jq なし 2 通り）を、このリポの名前とパスに移したもの。
+gh は PATH の先頭に置いた偽物に差し替え、`gh pr view <PR> -R <repo> --json …` に下の FIXTURES を返す
+（ネットワークにも GitHub にも出ない）。bookmark の日時は実行時に作るので、日が経っても判定が変わらない。
 CI は回さない（ほかの hook のテストと同じく手動）。
 """
 
 import json
 import os
-import stat
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 
 HOOK = os.path.join(os.path.dirname(__file__), "..", "guard-pr-merge.sh")
 
 BLOCK = 2
 PASS = 0
 
+REPO = "okayus/matatabetai"
+M = "gh pr merge"
+
 FAKE_GH = """#!/usr/bin/env bash
-case "$*" in
-  "pr view --json number -q .number") [ -n "${FAKE_CURRENT:-}" ] && echo "$FAKE_CURRENT" || exit 1 ;;
-  *"--json files"*) [ "${FAKE_FAIL:-}" = files ] && exit 1; printf '%s\\n' "${FAKE_FILES:-}" ;;
-  *"--json comments"*) [ "${FAKE_FAIL:-}" = comments ] && exit 1; printf '%s\\n' "${FAKE_COMMENTS:-}" ;;
-  *) exit 1 ;;
-esac
+[ "$1" = pr ] && [ "$2" = view ] || exit 1
+f="$FAKE_GH_FIXTURES/$3.json"
+[ -f "$f" ] || { echo "no such PR" >&2; exit 1; }
+cat "$f"
 """
 
-CODE = "packages/web/src/App.tsx"
-MIGRATION = "packages/web/drizzle/0008_kokemusu_posts.sql\npackages/web/worker/db/schema.ts"
-BOOKMARK = "**D1 Time Travel bookmark (taken before merge)**\n`00000085-0000...`"
+BOOKMARK_ID = "00000085-0000024c-00004c6d-8e61117bf38d7adb71b934ebbf891683"
 
-# 組み立てる。直書きすると、このファイルを heredoc で書く Bash コマンドを hook 自身が止める。
-M = "gh pr " + "merge"
 
-# (期待, 名前, コマンド, 偽 gh の環境)
-CASES: list[tuple[int, str, str, dict[str, str]]] = [
-    # --- 形の検査 ---
-    (BLOCK, "即時 merge", f"{M} 80 --squash", {"FAKE_FILES": CODE}),
-    (BLOCK, "--auto だけ（merge commit）", f"{M} --auto 80", {"FAKE_FILES": CODE}),
-    (BLOCK, "--auto --merge", f"{M} --auto --merge 80", {"FAKE_FILES": CODE}),
-    (BLOCK, "--admin", f"{M} --auto --squash --admin 80", {"FAKE_FILES": CODE}),
-    (BLOCK, "1 回に 2 PR", f"{M} --auto --squash 80 && {M} --auto --squash 81", {"FAKE_FILES": CODE}),
-    (BLOCK, "bash -c で包んだ即時 merge", f'bash -c "{M} 80 --squash"', {"FAKE_FILES": CODE}),
-    (BLOCK, "PR を決められない", f"{M} --auto --squash", {"FAKE_FILES": CODE}),
-    # 文字列として出てくるだけでも検査する（bash -c を止めるための fail-closed。既知の誤検知）
-    (BLOCK, "grep の引数", f'grep -n "{M}" CLAUDE.md', {}),
-    # --- migration の関門 ---
-    (BLOCK, "migration で bookmark が無い", f"{M} --auto --squash 80", {"FAKE_FILES": MIGRATION}),
-    (
-        BLOCK,
-        "URL 指定の migration で bookmark が無い",
-        f"{M} --auto --squash https://github.com/okayus/matatabetai/pull/80",
-        {"FAKE_FILES": MIGRATION},
-    ),
-    (BLOCK, "変更ファイルを取れない", f"{M} --auto --squash 80", {"FAKE_FAIL": "files"}),
-    (BLOCK, "コメントを取れない", f"{M} --auto --squash 80", {"FAKE_FILES": MIGRATION, "FAKE_FAIL": "comments"}),
-    # --- 通すもの ---
-    (PASS, "merge 以外", "git status", {}),
-    (PASS, "--auto --squash", f"{M} --auto --squash 80", {"FAKE_FILES": CODE}),
-    (PASS, "-s の短縮形", f"{M} --auto -s 80", {"FAKE_FILES": CODE}),
-    (PASS, "PR 番号の後に ; が付く", f"{M} --auto --squash 80; echo done", {"FAKE_FILES": CODE}),
-    (PASS, "--delete-branch 付き", f"{M} --auto --squash 80 --delete-branch", {"FAKE_FILES": CODE}),
-    (PASS, "今のブランチの PR", f"{M} --auto --squash", {"FAKE_FILES": CODE, "FAKE_CURRENT": "80"}),
-    (
-        PASS,
-        "migration で bookmark がある",
-        f"{M} --auto --squash 80",
-        {"FAKE_FILES": MIGRATION, "FAKE_COMMENTS": BOOKMARK},
-    ),
+def iso(delta: timedelta) -> str:
+    return (datetime.now(timezone.utc) - delta).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def pr(paths: list[str], comments: list[tuple[str, timedelta]] = (), changed: int | None = None) -> dict:
+    return {
+        "files": [{"path": p} for p in paths],
+        "changedFiles": len(paths) if changed is None else changed,
+        "comments": [{"body": body, "createdAt": iso(age)} for body, age in comments],
+    }
+
+
+BOOKMARK = f"**D1 Time Travel bookmark (taken before merge)**\n\n- database: `matatabetai`\n- bookmark: `{BOOKMARK_ID}`"
+MIGRATION = "packages/web/drizzle/0008_kokemusu_posts.sql"
+
+FIXTURES = {
+    "106": pr(["packages/web/worker/cron.ts", "CLAUDE.md"]),
+    "84": pr([MIGRATION, "docs/adr/015-x.md"]),
+    "200": pr([MIGRATION], [(BOOKMARK, timedelta(hours=1))]),  # 24 時間以内の bookmark
+    "201": pr([MIGRATION], [(BOOKMARK, timedelta(days=2))]),  # 古い bookmark
+    "202": pr([MIGRATION], [("merge 前に D1 Time Travel bookmark を取ってください", timedelta(minutes=5))]),
+    "203": pr([f"packages/web/src/f{i}.ts" for i in range(100)], changed=150),  # 一覧が途中で切れている
+    "204": pr(["docs/status.md"]),
+}
+
+HEREDOC_MERGE = f"git commit -m \"$(cat <<'EOF'\ndocs: merge の形\n\n{M} 106 --squash は使わない\nEOF\n)\""
+HEREDOC_THEN_MERGE = f"git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\" && {M} 106"
+
+CASES: list[tuple[int, str]] = [
+    (PASS, "ls -la"),
+    (PASS, "gh pr view 106"),
+    (PASS, f"{M} --auto --squash 106"),
+    (PASS, f"{M} 106 --auto --squash"),
+    (PASS, f"{M} --auto -s 106"),
+    (BLOCK, f"{M} 106 --squash"),
+    (BLOCK, f"{M} --squash 106"),
+    (BLOCK, f"{M} --auto --squash --admin 106"),
+    (BLOCK, f"{M} --auto --merge 106"),
+    (BLOCK, f"{M} --auto --squash 84"),
+    (BLOCK, f"{M} --auto --squash 84;"),
+    (PASS, f"{M} --auto --squash 200"),
+    (BLOCK, f"{M} --auto --squash 201"),
+    (BLOCK, f"{M} --auto --squash 202"),
+    (BLOCK, f"{M} --auto --squash 203"),
+    (PASS, f"{M} --auto --squash 204"),
+    (BLOCK, f"{M} --auto --squash 999"),
+    (BLOCK, f"{M} --auto --squash"),
+    (BLOCK, f"{M} --auto --squash 106 && {M} --auto --squash 204"),
+    (PASS, f"cd /workspace && {M} --auto --squash 106"),
+    (PASS, f"{M} --auto --squash 106 | cat"),
+    (PASS, f"{M} --auto --squash https://github.com/{REPO}/pull/106"),
+    (BLOCK, f"{M} --auto --squash https://github.com/{REPO}/pull/84"),
+    (BLOCK, f"{M} --auto --squash https://github.com/okayus/kokemusu/pull/71"),
+    (PASS, f"{M} --auto --squash 106 -R {REPO}"),
+    (BLOCK, f"{M} --auto --squash -R {REPO} 84"),
+    (BLOCK, f"{M} --auto --squash 106 --repo okayus/kokemusu"),
+    (BLOCK, f"{M} --auto --squash 106 --repo=okayus/kokemusu"),
+    (PASS, f"{M} --disable-auto 106"),
+    (BLOCK, f'{M} --auto --squash --subject "fix 2 bugs" 106'),
+    (PASS, f'{M} --auto --squash 106 --body "see #84"'),
+    (PASS, HEREDOC_MERGE),
+    (BLOCK, HEREDOC_THEN_MERGE),
+    (PASS, f'git commit -m "docs: {M} 106 --admin は使わない"'),
+    (PASS, f'echo "use {M} --admin 106"'),
+    (BLOCK, f'bash -c "{M} 106"'),
+    (PASS, f"GH_PROMPT_DISABLED=1 {M} --auto --squash 106"),
+    (BLOCK, f"timeout 30 {M} --auto --squash 84"),
+    (BLOCK, f"/usr/bin/{M} 106"),
+    (BLOCK, f"git fetch\n{M} 106"),
+    (PASS, '{"tool_name":"Read"}'),
 ]
-
-
-def write_exec(path: str, body: str) -> None:
-    with open(path, "w") as f:
-        f.write(body)
-    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
 
 
 def run(command: str, env: dict[str, str]) -> int:
@@ -84,32 +110,42 @@ def run(command: str, env: dict[str, str]) -> int:
     return subprocess.run([HOOK], input=payload, capture_output=True, text=True, env=env).returncode
 
 
+def report(expected: int, actual: int, name: str) -> bool:
+    ok = actual == expected
+    shown = name.replace("\n", "⏎")[:90]
+    print(f"{'ok  ' if ok else 'FAIL'} expected={expected} actual={actual}  {shown}")
+    return ok
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         fake_bin = os.path.join(tmp, "fake-bin")
+        fixtures = os.path.join(tmp, "fixtures")
         os.makedirs(fake_bin)
-        write_exec(os.path.join(fake_bin, "gh"), FAKE_GH)
-        base = {"PATH": f"{fake_bin}:{os.environ.get('PATH', '')}", "HOME": tmp}
+        os.makedirs(fixtures)
+        with open(os.path.join(fake_bin, "gh"), "w") as f:
+            f.write(FAKE_GH)
+        os.chmod(os.path.join(fake_bin, "gh"), 0o755)
+        for number, body in FIXTURES.items():
+            with open(os.path.join(fixtures, f"{number}.json"), "w") as f:
+                json.dump(body, f)
+        env = {"PATH": f"{fake_bin}:{os.environ.get('PATH', '')}", "FAKE_GH_FIXTURES": fixtures}
 
         failed = 0
-        for expected, name, command, fake in CASES:
-            actual = run(command, {**base, **fake})
-            ok = actual == expected
-            failed += not ok
-            print(f"{'ok  ' if ok else 'FAIL'} {name} (expected={expected} actual={actual})")
+        for expected, command in CASES:
+            failed += not report(expected, run(command, env), command)
 
-        # jq が無ければ検査できないので止める。bash と coreutils だけの PATH を作る
-        bare_bin = os.path.join(tmp, "bare-bin")
-        os.makedirs(bare_bin)
-        for tool in ("bash", "cat", "grep", "wc"):
+        # jq が無ければ、命令が gh pr merge のときだけ止める。bash と coreutils だけの PATH を作る
+        bare = os.path.join(tmp, "bare-bin")
+        os.makedirs(bare)
+        for tool in ("bash", "cat", "date", "env"):
             found = subprocess.run(["which", tool], capture_output=True, text=True).stdout.strip()
-            os.symlink(found, os.path.join(bare_bin, tool))
-        rc = run(f"{M} --auto --squash 80", {"PATH": f"{fake_bin}:{bare_bin}", "HOME": tmp})
-        ok = rc == BLOCK
-        failed += not ok
-        print(f"{'ok  ' if ok else 'FAIL'} jq が無い (expected={BLOCK} actual={rc})")
+            os.symlink(found, os.path.join(bare, tool))
+        no_jq = {"PATH": f"{fake_bin}:{bare}", "FAKE_GH_FIXTURES": fixtures}
+        failed += not report(BLOCK, run(f"{M} --auto --squash 106", no_jq), "jq なしで merge")
+        failed += not report(PASS, run("ls -la", no_jq), "jq なしで ls")
 
-        total = len(CASES) + 1
+        total = len(CASES) + 2
         print(f"\n{total - failed}/{total} passed")
         return 1 if failed else 0
 
