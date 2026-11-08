@@ -32,10 +32,10 @@ docker exec -it matatabetai-dev zsh   # token 無しで入りたいとき
 firewall は default-deny なので「docs を見に行く」には経路が要る（skill `cloudflare-mcp-claude-tooling`）。
 
 1. **MCP**: `cloudflare-docs`（Cloudflare 公式、認証不要）と `context7`（`https://mcp.context7.com/mcp`、キー不要。MDN・Hono・Drizzle・React・Vite・Cloudflare Workers を横断）
-2. **WebFetch**: OPTIONAL allowlist のホストだけ取得できる — `developer.mozilla.org` `react.dev` `hono.dev` `orm.drizzle.team` `vite.dev` `vitest.dev` `zod.dev` `developer.chrome.com` `web.dev` `developers.cloudflare.com`。`llms.txt` を持つサイト（hono / drizzle / react / vite / vitest / zod / cloudflare）は目次から入る
+2. **WebFetch**: OPTIONAL allowlist のホストだけ取得できる — `developer.mozilla.org` `react.dev` `hono.dev` `orm.drizzle.team` `vite.dev` `vitest.dev` `zod.dev` `developer.chrome.com` `web.dev` `developers.cloudflare.com`。`llms.txt` を持つサイト（hono / drizzle / react / vite / vitest / zod / cloudflare）は目次から入る（`llms-full.txt` は巨大なので最後の手段）
 3. **WebSearch**: Anthropic 側で実行されるので egress 不要（タイトルと URL だけ返る）
 
-`modern-web-guidance`（Google Chrome、Apache-2.0）は project scope `.claude/skills/modern-web-guidance/` に同梱。HTML / CSS / UI を書く前に `search` で引く（`npx -y modern-web-guidance@latest …` を実行する。registry は FATAL allowlist 済み）。出自と版は `skills-lock.json`。更新はコンテナ内で `npx skills add GoogleChrome/modern-web-guidance --skill modern-web-guidance -a claude-code --copy -y` を打ち直し、単独 PR にする。`npx skills update` は本体を gitignore 済みの `.agents/` に移して `.claude/skills/` 側を symlink にし、clone 先で壊れるので deny している。
+`modern-web-guidance`（Google Chrome、Apache-2.0）は project scope `.claude/skills/modern-web-guidance/` に同梱。HTML / CSS / UI を書く前に `search` で引く（`npx -y modern-web-guidance@latest …` を実行する。registry は FATAL allowlist 済み）。third-party skill は `.claude/skills/` に実体を置き（symlink にしない）、`skills-lock.json` を commit し、足すのも更新するのも単独 PR にする。出自と版は `skills-lock.json`。modern-web-guidance の更新はコンテナ内で `npx skills add GoogleChrome/modern-web-guidance --skill modern-web-guidance -a claude-code --copy -y` を打ち直し、単独 PR にする。`npx skills update` は本体を gitignore 済みの `.agents/` に移して `.claude/skills/` 側を symlink にし、clone 先で壊れるので deny している。
 
 ## okayus-skills のマウント（読み取り専用）
 
