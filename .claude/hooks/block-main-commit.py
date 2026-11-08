@@ -17,6 +17,9 @@
    - 素通し: 逆に matatabetai が feature branch にいる間はフック全体が無効になり、
      main にいる別リポジトリへの commit も通る
 
+   同じコマンドの中の `git switch` と `git checkout -b` も追う。判定はコマンドの実行前なので、
+   追わないと `git switch -c x && git commit …` を「まだ main」として止めてしまう。
+
 境界はサーバー側の `protect-main` ruleset と token scope で、このフックは事故を
 早く止める二重化（ADR-001 改訂 2026-08-24）。判定できないときは通す（fail-open）
 — 見逃しは ruleset が拾うが、誤ブロックは誰も拾わないため。
@@ -51,6 +54,11 @@ GIT_OPTS_TAKING_VALUE = {
 }
 
 BLOCKED_SUBCOMMANDS = {"commit", "push"}
+
+# 次のトークンを新しいブランチ名として取る option。checkout は -b / -B / --orphan だけを追う
+# （`git checkout <名前>` はファイルの復元とも読めるので、切り替えとみなさない）。
+SWITCH_CREATE = {"-c", "-C", "--create", "--force-create", "--orphan"}
+CHECKOUT_CREATE = {"-b", "-B", "--orphan"}
 
 
 def strip_heredocs(command: str) -> str:
@@ -126,15 +134,15 @@ def resolve(path: str, base: str) -> str:
     return os.path.normpath(os.path.join(base, path))
 
 
-def git_target(tokens: list[str], cwd: str) -> tuple[str | None, str]:
-    """tokens[0] == "git" 前提で (subcommand, その git が走るディレクトリ) を返す。"""
+def git_target(tokens: list[str], cwd: str) -> tuple[str | None, str, int]:
+    """tokens[0] == "git" 前提で (subcommand, その git が走るディレクトリ, subcommand の位置) を返す。"""
     directory = cwd
     i = 1
     while i < len(tokens):
         token = tokens[i]
         if token == "-C":
             if i + 1 >= len(tokens):
-                return None, directory
+                return None, directory, i
             directory = resolve(tokens[i + 1], directory)
             i += 2
         elif token.startswith("-C") and len(token) > 2:
@@ -145,8 +153,28 @@ def git_target(tokens: list[str], cwd: str) -> tuple[str | None, str]:
         elif token.startswith("-"):
             i += 1  # --no-pager など値を取らないもの、--git-dir=… の = 形式も含む
         else:
-            return token, directory
-    return None, directory
+            return token, directory, i
+    return None, directory, i
+
+
+def branch_after(subcommand: str, args: list[str]) -> str | None:
+    """`git switch` / `git checkout -b` の後のブランチ名を返す。読めなければ None、detach なら ""。"""
+    create = SWITCH_CREATE if subcommand == "switch" else CHECKOUT_CREATE
+    for i, arg in enumerate(args):
+        if arg in create:
+            return args[i + 1] if i + 1 < len(args) else None
+        name, _, value = arg.partition("=")
+        if value and name in create:
+            return value
+        if subcommand != "switch":
+            continue
+        if arg in ("-d", "--detach"):
+            return ""
+        if arg == "-":
+            return None  # 直前のブランチは追えない
+        if not arg.startswith("-"):
+            return arg
+    return None
 
 
 def current_branch(directory: str) -> str | None:
@@ -166,6 +194,7 @@ def current_branch(directory: str) -> str | None:
 
 def find_offender(command: str, cwd: str) -> tuple[str, str] | None:
     """main で commit/push しようとしている最初の (ディレクトリ, subcommand) を返す。"""
+    switched: dict[str, str] = {}  # このコマンドの中で切り替えた先（ディレクトリ → ブランチ）
     for raw in segments(command):
         tokens = drop_env_prefix(raw)
         if not tokens:
@@ -180,10 +209,16 @@ def find_offender(command: str, cwd: str) -> tuple[str, str] | None:
             continue
         if head != "git":
             continue
-        subcommand, directory = git_target(tokens, cwd)
+        subcommand, directory, index = git_target(tokens, cwd)
+        if subcommand in ("switch", "checkout"):
+            branch = branch_after(subcommand, tokens[index + 1 :])
+            if branch is not None:
+                switched[directory] = branch
+            continue
         if subcommand not in BLOCKED_SUBCOMMANDS:
             continue
-        if current_branch(directory) == "main":
+        branch = switched[directory] if directory in switched else current_branch(directory)
+        if branch == "main":
             return directory, subcommand
     return None
 
@@ -208,10 +243,10 @@ def main() -> int:
     directory, subcommand = offender
     print(
         f"`{directory}` は main。main への直接 {subcommand} は禁止 "
-        f"(CLAUDE.md「ブランチ戦略」)。\n"
+        f"(CLAUDE.md「git と merge」)。\n"
         f"\n"
         f"feature branch を切ること:\n"
-        f"  git -C {directory} switch -c <type>/<short-description>\n"
+        f"  git -C {directory} switch -c claude/<type>-<topic>\n"
         f"\n"
         f"境界はサーバー側の protect-main ruleset で、このフックは事故を早く止める"
         f"二重化 (ADR-001)。",

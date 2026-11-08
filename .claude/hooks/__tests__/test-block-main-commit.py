@@ -51,12 +51,21 @@ def build_cases(main_repo: str, feat_repo: str, plain_dir: str):
         (BLOCK, "サブシェル", f"({g} -C {main_repo} {cm} -m x)", feat_repo),
         # heredoc の *終端後* は本物のコマンド位置
         (BLOCK, "heredoc の後の本物", f"cat <<'EOF'\nnote\nEOF\n{g} {cm} -m x", main_repo),
+        # 同じコマンドの中で main に切り替えてから commit する
+        (BLOCK, "同じコマンドで main へ switch", f"{g} switch main && {g} {cm} -m x", feat_repo),
+        # 切り替えたのは別のリポジトリなので、cwd は main のまま
+        (BLOCK, "別リポジトリで switch -c", f"{g} -C {feat_repo} switch -c y && {g} {cm} -m x", main_repo),
         # --- 通すべきもの ---
         # sh 版はここで止まっていた。cwd（= プロジェクト）が main というだけで、
         # 別リポジトリへの commit を巻き込んでいた。CLAUDE.md が定める skill 還元の手順。
         (PASS, "feature branch のリポジトリへ cd", f"cd {feat_repo} && {g} {cm} -m x", main_repo),
         (PASS, "cwd が feature branch", f"{g} {cm} -m x", feat_repo),
         (PASS, "git -C で feature branch を指す", f"{g} -C {feat_repo} {pu}", main_repo),
+        # 判定はコマンドの実行前。同じコマンドで切ったブランチを追わないと止めてしまう
+        # （/handoff で 08-31〜09-05 に 6 回踏んだ）
+        (PASS, "同じコマンドで switch -c", f"{g} switch -c claude/x && {g} add . && {g} {cm} -m x", main_repo),
+        (PASS, "同じコマンドで checkout -b", f"{g} checkout -b claude/x origin/main && {g} {cm} -m x", main_repo),
+        (PASS, "同じコマンドで --create=", f"{g} switch --create=claude/x && {g} {cm} -m x", main_repo),
         # sh 版は部分一致だったので、本文に文字列が出るだけで止まっていた。
         # gh pr create / gh pr comment はこのプロジェクトの標準ワークフロー。
         (PASS, "PR 本文の文字列", f'gh pr create --body "手順: {g} {pu} origin main"', main_repo),
@@ -64,6 +73,8 @@ def build_cases(main_repo: str, feat_repo: str, plain_dir: str):
         (PASS, "cd するが git ではない", f"cd {main_repo} && ls", feat_repo),
         (PASS, "commit / push 以外の git", f"{g} status", main_repo),
         (PASS, "git リポジトリでない場所", f"cd {plain_dir} && {g} {cm} -m x", main_repo),
+        # `git checkout <名前>` はファイルの復元とも読めるので追わない（fail-open）
+        (PASS, "checkout <名前> は追わない", f"{g} checkout main && {g} {cm} -m x", feat_repo),
         # 引用符が行をまたぐと解析できない。fail-open
         # （見逃しは protect-main ruleset が拾うが、誤ブロックは誰も拾わない）
         (PASS, "引用符が閉じていない", f'{g} {cm} -m "unclosed', main_repo),
