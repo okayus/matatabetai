@@ -1,213 +1,49 @@
-# Mata Tabetai (またたべたい)
+# Mata Tabetai（またたべたい）
 
-このファイルは**規約と目次だけ**（コンテナ内も含めどのセッションでも最初に読まれる）。進捗と次の一手は `docs/status.md`（SessionStart hook が自動注入）、履歴は `docs/log.md` と git、段取りは `docs/roadmap.md`、要件の正典は `docs/requirements.md`、決定は `docs/adr/`。**ここに進捗・履歴・完了報告を書かない。**
+家族で食べたものを記録し、振り返って次の献立につなげる Web アプリ。要件の正典は `docs/requirements.md`（変えるときは先にここを直す。同じ PR の先頭の commit でよい）、決定は `docs/adr/`、段取りは `docs/roadmap.md`、開発環境は `docs/local-dev.md`。
 
-## 進捗の持ち方（status hub）
+## 進捗の持ち方
 
-- `docs/status.md` = いまのハブ。**40 行 / 3 KB 上限**、見出しは「フェーズ / 次の 3 手 / 詰まり・人手待ち / 進行中 PR」の 4 つ固定。終わった項目は消して `docs/log.md` の先頭へ 1 行（取り消し線は禁止）。8 行を超える節は `docs/plans/<topic>.md` に切り出し、完了したら削除。
-- セッションの区切りでユーザが `/handoff` を打つ（書き換え → log → `.claude/hooks/check-status.sh` → commit）。CI も同じ検査を走らせる。
-- `/compact` するときは、変更したファイル一覧と「次の 3 手」の 1 手目を必ず要約に残す。
+- 進捗と次の一手は `docs/status.md`（SessionStart hook が毎回注入する）、履歴は `docs/log.md` と git。このファイルには規約だけを書く。
+- `status.md` は 40 行 / 3 KB 以内、見出しは「フェーズ / 次の 3 手 / 詰まり・人手待ち / 進行中 PR」の 4 つで固定。終わった項目は消して `log.md` の先頭へ 1 行で移す（取り消し線は使わない）。8 行を超える節は `docs/plans/<topic>.md` に切り出す。書き戻しはユーザが打つ `/handoff`、上限の検査は `.claude/hooks/check-status.sh`（CI も走らせる）。
 
 ## このアプリは何のためにあるか
 
-食べたものを記録するアプリだが、**目的は記録そのものではない**。
-
-1. **振り返って思い出を楽しむ** — 過去の食事を眺めることが喜びになる UX を優先
-2. **次に食べるもののアイディアにつなげる** — 「またたべたい」が次の献立決定の起点になる
-
-機能設計・コピーライティング・UI の判断に迷ったら、この 2 つに寄与するかで決める。「記録の正確性」「網羅性」「カロリー計算」のような汎用食事記録アプリの方向には進まない。
-
-## 想定ユーザー
-
-- 第一義的には**家族数人だけ**が使う閉じた SNS
-- ただし**将来一般公開する可能性を残している**ため、bot scan / レート制限 / 認証などインフラ側は最初から公開を前提に設計する
-- UX は「身内で笑い合える内輪感」を許容してよい（インスタ風だが対外的な見栄えは二の次）
-
-## 認可モデル
-
-家族単位の「**スペース**」が認可境界（[ADR-001](./docs/adr/001-project-initiation.md)、skill `cloudflare-workers-space-membership-invite`）。
-
-- 各ユーザーは自分のスペースを **1 つだけ作成できる**（owner。初回登録時に atomic に作成）
-- 招待リンク（URL）経由で他人のスペースに **参加できる（参加先は複数可、role = member）**。招待は single-use トークン、DB には sha256 のみ保存
-- ユーザーは自分が作成 or 参加しているスペースのリソースのみアクセス可。`sessionMiddleware` が毎リクエスト `c.var.userId` と `c.var.memberSpaceIds` を解決し、`/api/spaces/:spaceId/*` は `spaceMiddleware` で所属を確認する
-- **所属外は 404**（403 は存在が漏れる）。`created_by` は表示・監査用であって認可軸ではない
-- ドメイン表の親（`meals`）は `space_id NOT NULL`、子（`meal_photos` / `meal_tags`）は親経由で属する。投稿・写真・「またたべたい」などすべてのリソースは必ずいずれかのスペースに属する。この境界は将来の一般公開後も維持する
-
-## 認証
-
-**passkey（WebAuthn）限定の招待制**（skill `cloudflare-workers-passkey-auth`、nyalog ADR-003 踏襲）。パスワード・OAuth・Cloudflare Access は使わない。登録経路は「初回 owner（`INITIAL_REGISTRATION_TOKEN`）」「招待リンク」「ログイン済みユーザの端末追加」の 3 つだけ。
-
-## インフラ方針
-
-Cloudflare Workers 上で SPA + API を単一 Worker から提供する（Hono / React + Vite + `@cloudflare/vite-plugin` / Drizzle + D1 / R2 / Zod / neverthrow / pnpm / TypeScript strict）。
-
-**Cron Triggers は 1 本だけ:**
-
-- kokemusu への日次投稿（`15 15 * * *` = 00:15 JST、[ADR-013](./docs/adr/013-kokemusu-daily-push.md)）。ほかの定期実行を要する機能は当面持たない（Workers Free の Cron はアカウントあたり 5 本・CPU 10 ms / 発火）
-
-**D1 命名:**
-
-- 本番 DB は `matatabetai` 単一でスタート（作成済み）。staging/preview が必要になった時点で `matatabetai-staging` を追加する（命名の非対称性は許容）
-
-**写真（R2）:**
-
-- private bucket `matatabetai-photos` + Worker proxy 配信（skill `cloudflare-r2-private-image-upload`）。public bucket / `r2.dev` / 公開オリジン前提の画像変換は使わない。クライアントで縮小してから上げる
-
-**RP_ID / ORIGIN:**
-
-- 本番 Worker ホスト `matatabetai.shiraoka.workers.dev` に**固定済**（2026-06 の account subdomain 改名 `toshiaki-mukai-9981` → `shiraoka` に追従、passkey 未登録のうちに更新）。WebAuthn の credential 不変性ルールに従い、**passkey を 1 つでも登録した後のホスト変更は破壊的**（既存 credential が全て無効化）
-- custom domain に移行するなら **passkey 登録前**に済ませる。後からの移行は credential 移行戦略（既存 credential 諦め or 並行運用）を別途検討する
-- ローカル開発は `packages/web/.dev.vars` 側で `RP_ID=localhost` / `ORIGIN=http://localhost:5173` に上書きする
-
-**デプロイ:**
-
-- **Workers Builds**（キーレス、skill `cloudflare-workers-builds-keyless-deploy`）。`main` への push で Cloudflare 側が `packages/web` を build → D1 migrations → deploy する。GitHub に Cloudflare の credential は無い（deploy 用トークン `matatabetai Workers Builds` は Cloudflare の中だけ）。非本番ブランチのビルドは OFF（preview version が**本番** D1 を掴むため）、`docs/*` と `*.md` だけの commit はビルドしない
-- CI（`.github/workflows/ci.yml`、secrets なし、job `ci`）は Workers Builds と独立で、PR と `main` push で typecheck / build と status hub の上限検査を走らせる。**Workers Builds は CI の完了を待たない**ので、「`main` は常に CI green」は `protect-main` ruleset（PR 必須 + required check `ci`）が担保する
-
-## 命名
-
-「Mata Tabetai（またたべたい）」— 由来と却下した候補は [docs/naming.md](./docs/naming.md)。「お気に入り」は UI 上「またたべたい」と呼ぶ。
-
-## 開発ワークフロー
-
-### 開発環境の前提（ADR-001）
-
-開発は **egress 制限つき Docker サンドボックス内**で行う（[docs/local-dev.md](./docs/local-dev.md)、skill `claude-code-docker-sandbox`）。起動は **`./up.sh`**（= 素の `docker compose up -d`。資格情報ゼロ・冪等）、**token 付きシェルは `./shell.sh`**（= `op read で op:// 参照を解決 → docker exec -e GH_TOKEN matatabetai-dev …`）。credential は **matatabetai 1 リポ限定の GitHub fine-grained PAT**（Contents + Pull requests、Workflows なし、90 日）だけで、`./shell.sh` が開いたシェルの env にのみ存在し、ディスクにもコンテナ設定にも書かない（skill `sandboxed-agent-github-token-via-1password` 0.2.0、ADR-001 改訂 2026-08-23）。Cloudflare のトークンは持たず `wrangler login` もしない。merge は人間がホストで行う。
-
-- ホストで `pnpm` / `npx` / `wrangler` などを直接叩かない（`.claude/hooks/require-container.py` が止める）。`docker compose exec dev <cmd>` 経由で実行する。人間がホストで wrangler を使う作業（login / secret / `--remote`）は `packages/web/node_modules/.bin/wrangler` を直接（`pnpm exec` は pnpm 11 の自動 install でコンテナの `node_modules` を壊す — docs/local-dev.md）
-- PR / CI の状態は **`gh pr view` / `gh pr checks`**（fine-grained PAT は Checks REST API を呼べないので `gh api …/check-runs` は使わない。`gh api` は deny）
-- merge 後の deploy 完了は `gh run list` / `gh run view` と本番 `/health`（`https://matatabetai.shiraoka.workers.dev/health`）で確認する
-
-### ブランチ戦略
-
-`main` への直接 commit/push は禁止。すべての変更は PR 経由で squash merge する。リポジトリは **public**（2026-08-23）で、main はサーバー側の `protect-main` ruleset（PR 必須 + required check `ci` + force push 禁止 + `bypass_actors: []`）が守る。hook（`.claude/hooks/block-main-commit.py`）と `.claude/settings.json` の deny は事故を早く止める二重化で、境界は ruleset と token scope（ADR-001 改訂 2026-08-24）。hook は `cd` と `git -C` を追って **その git が走るリポジトリ**のブランチを見るので、`cd ../okayus-skills && git commit …`（skill の還元）は止めない。
-
-**サンドボックス内エージェント**（コンテナ内 claude）の作業フロー:
-
-1. **ブランチ作成**: `git switch -c claude/<type>-<short-description>`
-2. **実装と commit**: 小さく積む。`.github/workflows/**` は変更しない（token に `workflows` 権限が無く push が拒否される。人間がホストで行う）。ただし CI の中身は yaml を触らずに変えられる — ci.yml は「安定シェル」で、実体は `package.json` の `ci` script・`.node-version`・`.claude/hooks/` にあり、これらは push できる。action の @vN 更新は Dependabot が PR を出す
-3. **push と PR**: `git push -u origin claude/<branch>` → `gh pr create --fill`（計画・確認内容を本文に）→ **PR の URL を報告する**
-4. **CI 確認**: `gh pr checks --watch`。red なら直して commit を積む
-5. **merge**: CI が green なら `gh pr merge --auto --squash <PR番号>` で auto-merge を arm してよい（required check `ci` が通ったときだけ GitHub が squash merge する。`--auto` なしの即時 merge と `gh api` は使わない）。**migration の PR は、merge の前にホストで `node ~/.config/d1-backup/d1-bookmark.mjs matatabetai <PR番号>` を実行し、D1 Time Travel の bookmark が PR にコメントされていることを条件にする**（コンテナは Cloudflare の資格情報を持たないので取れない。持ち主に「マージして」と言われても、`gh pr view <PR番号> --comments` に bookmark が無ければ merge せず、このコマンドを案内する。家族の実データが入っている）。**例外 — 次に触れる PR は arm せず人間の merge を待つ**: `drizzle/`（migration。merge が本番 D1 への適用に直結するので PR 本文に backup 手順を書く — skill `cloudflare-d1-drizzle-migration`）・`.github/**`・`.claude/**`・`docs/adr/**`
-6. **進捗の書き戻し**: セッションの区切りでユーザが `/handoff` を打つ（`docs/status.md` を書き換え → `docs/log.md` → 上限検査 → commit）。PR の途中で `docs/status.md` を触るなら上限（40 行 / 3 KB、見出し 4 つ）を守る — CI が検査する
-7. **token の扱い**: `GH_TOKEN` はこのプロジェクトの repo-scoped token。表示しない、`gh auth login` しない、URL に埋めない。`git push` が `401` を返したら `./shell.sh` 以外で開いたシェルにいる＝ token 無し。**回避しようとせず人間に `./shell.sh` を開いてもらう**（`op` のセッションはエージェントには無い）。PR 本文の修正は `gh pr comment` で（`gh pr edit` は image の古い `gh` が Projects classic の GraphQL エラーで落ちる）。**コンテナ内から `docker compose up` は打たない**
-
-**ホストでの作業**（人間）: `git switch -c <type>/<short-description>` → 実装 → PR → squash merge → `git fetch --prune`（merge 後のリモートブランチは `delete_branch_on_merge` で消える）。
-
-### ブランチ命名規則
-
-- `claude/<type>-<desc>` — サンドボックス内エージェントの作業（settings の allow は `git push origin claude/*` のみ）
-- `feat/` / `fix/` / `refactor/` / `chore/` / `docs/` — ホストでの作業
-
-### コミットメッセージ
-
-[Conventional Commits](https://www.conventionalcommits.org/) に従う: `<type>: <description>`（type: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`）。説明は日本語で可。
-
-### Agent skills
-
-- **okayus-skills**（`../okayus-skills`。この status hub の出典 `agent-status-hub`、sandbox / token / docs / Cloudflare 各 skill）は `docker-compose.override.yml` で `~/.claude/skills` に **読み取り専用**でマウントされる（2026-09-20 に `:ro` へ戻した。ホストの `~/.claude/skills` は同じ場所への symlink なので、書き込み可だと、権限確認なしで動くコンテナが資格情報を持つホスト側 Claude の読む指示を書き換えられる。ホストのセッションは user scope の copy を見る — 古い可能性があるので `gh skill update` を挟む）。**このリポジトリに okayus-skills を vendoring しない**（2026-05 の project-scope copy は古くなったので削除済み）
-- このプロジェクトは `cloudflare-workers-passkey-auth` / `cloudflare-workers-space-membership-invite` / `cloudflare-r2-private-image-upload` の**最初の利用者**で、各 SKILL.md の `## Unverified claims — confirm while implementing, then write back` 節が還元チェックリスト
-  - **還元のルール**: 実装中に `UNVERIFIED:` 項目を確認・訂正したら、コンテナからは skill を書けないので、**還元メモ**（どの skill のどの項目を、何に直すか。`(verified YYYY-MM-DD in matatabetai)` を添える）を PR 本文か完了報告に書く。SKILL.md の編集・`metadata.version` の更新・commit / PR はホスト側で `cd ../okayus-skills` して行う（`feat(<skill>): … を還元`）。このリポジトリの PR とは別
-  - 新しい罠を踏んだら同じ skill の pitfalls に追記する。skill に無い新しい話題（例: OGP 取得）は新 skill 候補として `docs/roadmap.md` に書く
-- **third-party skill** は `.claude/skills/` に実体を vendoring する（symlink にしない）。コンテナ内で `npx skills add <owner>/<repo>@<skill> -a claude-code -y`。`skills-lock.json` を commit、更新も同じ `add` を打ち直して単独 PR（`npx skills update` は `.claude/skills/<skill>` を gitignore 済みの `.agents/` への symlink に変え、clone 先で壊れるので使わない）
-- **公式ドキュメントの調べ方（3 層。事前学習の記憶で API を断定しない）**: ① `context7` MCP（`resolve-library-id` → `query-docs`。MDN / Hono / Drizzle / React / Vite / Cloudflare Workers を横断）— Cloudflare は `cloudflare-docs` MCP を最優先 ② `llms.txt` の直読み（WebFetch: `hono.dev/llms.txt` `orm.drizzle.team/llms.txt` `react.dev/llms.txt` `vite.dev/llms.txt` `vitest.dev/llms.txt` `zod.dev/llms.txt` `developers.cloudflare.com/llms.txt`。目次 → 必要ページ。`llms-full.txt` は巨大なので最後） ③ WebSearch → WebFetch（WebSearch は Anthropic 側で実行され egress 不要。URL が firewall の allowlist 外なら取得できないので ① に戻る）
-- **HTML / CSS / UI を書く前に `modern-web-guidance` を読む**（project scope `.claude/skills/modern-web-guidance/` に同梱。`search` / `retrieve` は `npx -y modern-web-guidance@latest …` を実行する）
-
-### 段取り
-
-段取りとフェーズは [docs/roadmap.md](./docs/roadmap.md)、いまの 3 手は `docs/status.md`（自動注入）。`.github/workflows/**` の変更は人間がホストから push する（token に `workflows` 権限なし）。
-
-## コーディング思想
-
-**Domain Modelling Made Functional** の原則に従う。
-
-### 核心原則
-
-- **型で不正な状態を表現不可能にする** — ドメインの制約を型システムで強制し、不正なデータがコンパイル時に排除されるようにする
-- **代数的データ型でドメインをモデリングする** — Discriminated Union で状態・バリエーションを表現し、パターンマッチで網羅性を保証する
-- **純粋関数でドメインロジックを書く** — 副作用（DB, API, IO）は境界に押し出し、ドメインロジックは入力→出力の純粋な変換として実装する
-- **Result 型でエラーを型安全に扱う** — `neverthrow` の `Result`/`ResultAsync` を使い、例外を throw しない。エラーも戻り値の型の一部として表現する
-- **Zod スキーマでドメイン制約を表現する** — バリデーションをスキーマとして宣言し、Branded Type で「検証済み」を型レベルで保証する
-- **Branded Type には `unique symbol` を使う** — `{ readonly __brand: unique symbol }` で定義する。文字列リテラルではなく `unique symbol` を使うことで、異なる Branded Type 間の誤った代入をコンパイル時に防ぐ
-
-### 実装パターン
-
-```typescript
-// Branded Type で検証済みの値を区別
-type MealId = string & { readonly __brand: unique symbol };
-const MealId = z.string().uuid().brand<"MealId">();
-
-// リンクプレビューは 取得中 / 成功 / 失敗 のいずれか → Discriminated Union で表現
-type LinkPreview =
-  | { status: "pending" }
-  | { status: "ok"; title: string; imageKey: string | null }
-  | { status: "failed" };
-
-// ドメインロジックは純粋関数 + Result 型
-function createMealRecord(input: unknown): Result<MealRecord, ValidationError> {
-  // ...
-}
-
-// 副作用は境界（リポジトリ / ハンドラ）に閉じ込める
-```
-
-### ドメインの設計メモ
-
-集計単位・タグ・サジェスト・URL / レシピ・またたべたい・日本語検索の決まりは [docs/requirements.md](./docs/requirements.md) 「実装への設計メモ」。
-
-### やらないこと
-
-- `throw` によるエラー伝播（Result 型を使う）
-- `any` 型の使用
-- 過度な抽象化・汎用化（現在の要件に必要な最小限の複雑さに留める）
-- 不要なコメント・ドキュメント（型と関数名で意図を伝える）
-
-### フロントエンド
-
-家族数人がスマホで使う。Baseline Newly available まで採用してよいが polyfill と重い fallback は入れない。`vercel-react-best-practices`（okayus-skills 経由）と `modern-web-guidance`（同梱済み）を引く。
-
-## テスト方針
-
-**ユニットテストと e2e は別レイヤーの別責務**。混ぜない。
-
-### ユニットテスト — ドメインの _意味_ を表現する
-
-- 対象: 純粋関数、Discriminated Union のパターンマッチ、Zod スキーマ、Result を返すドメイン関数
-- 問い: 「この値は何を意味するか」「この関数の契約は何か」
-- 型で表現しきれない意味的制約（例: 「レシピ source が `url` のとき必ず有効な URL」）を固定する
-- IO・HTTP・DB は一切持ち込まない。副作用は境界の外側なので、ここで検証しても意味を表さない
-- 型で既に保証されていること（`MealId` に string を渡すとコンパイルエラー、等）はテストにしない。型がテストの代替
-
-### e2e テスト — 配線と _存在の事実_ を表現する
-
-- 対象: `wrangler dev` 相手に実ブラウザで通すユーザーシナリオ 1〜数本と、型で保証できない境界（skill `cloudflare-workers-e2e-playwright`）
-- 問い: 「型で保証できないものが、実際に繋がって動いているか」
-- 守る範囲（意図的に狭く）:
-  - **クリティカルパス 1 本**: ログイン → 投稿作成（写真+メタ） → またたべたいトグル → 削除 → ログアウト
-  - **永続化の事実**: リロード後に投稿・写真が残る（ユニットでは原理的に検知不能）
-  - **認可の横流れ**: 他スペースのリソースに触れない（API 404 + UI のアクセス拒否表示）
-  - **セキュリティヘッダ**: CSP / HSTS / X-Frame-Options の付与（ミドルウェア配線の回帰防止）
-- 入れない: ドメインの意味（ユニットに譲る）、見た目のアニメーション挙動、網羅的な入力バリデーション（ユニットと Zod で押さえる）
-- `pnpm test:e2e` はローカル dev データを消す前提で書く（global-setup で dev-bypass ユーザのデータを全削除）
-
-### 棲み分けの原則
-
-- ユニットが "means"、e2e が "exists and is wired"。ユニットが増えても e2e は増えない
-- e2e でドメインの網羅を目指さない。1 本のスモークと、型で絶対に検知できない数点だけを持つ
-- ユニットで IO をモックしない。モックが必要な時点でそれは e2e の領域
-
-## コマンド
-
-```bash
-# すべてコンテナ内（docker compose exec dev zsh）で実行する
-pnpm dev -- --host 0.0.0.0   # 開発サーバー → ホストから http://localhost:5573/
-pnpm build                   # プロダクションビルド
-pnpm check                   # pnpm types + type check（format / lint は未導入）
-pnpm test                    # ユニットテスト（vitest。純粋関数だけ）
-pnpm e2e                     # Playwright 4 spec（ビルド成果物を wrangler dev で配信。ローカル D1 を全消し。CI では回さない）
-pnpm run ci                  # CI と同じ検査（-r で check + test + build。ci.yml はこれを呼ぶだけ）
-pnpm types                   # wrangler.jsonc から worker-configuration.d.ts を生成（gitignore。clone 直後に 1 回）
-pnpm db:generate --name <summary>   # schema.ts から drizzle/NNNN_<summary>.sql を生成（`--` を挟むと drizzle-kit が「Unrecognized options」で落ちる。rebuild が出たら skill cloudflare-d1-drizzle-migration）
-pnpm db:migrate              # D1 migration をローカルに適用
-pnpm db:migrate:prod         # 本番 D1 に適用。通常は deploy パイプラインが行う。人手なら packages/web で ./node_modules/.bin/wrangler d1 migrations apply matatabetai --remote（ホストで pnpm 経由は不可）
-```
+- 目的は記録そのものではなく、過去の食事を振り返って楽しむことと、「またたべたい」を次の献立の起点にすることの 2 つ。機能・文言・UI に迷ったら、この 2 つに寄与するかで決める。記録の正確さ・網羅性・カロリー計算のような汎用の食事記録アプリの方向には進まない。
+- 家族数人だけが使う閉じた SNS。UX はインスタ風だが、身内の内輪感を許してよく、対外的な見栄えは二の次。将来の一般公開に備えて、認証・認可・bot scan 対策・レート制限は公開を前提に作る。
+- 「お気に入り」は UI では「またたべたい」と呼ぶ。
+
+## 確定済みの決定（根拠は ADR）
+
+- 認可の境界は家族単位の「スペース」で、一般公開の後も変えない。リソースは必ずいずれかのスペースに属する（親の `meals` は `space_id NOT NULL`、子は親を通して属する）。`/api/spaces/:spaceId/*` は `spaceMiddleware` で所属を確かめ、所属外には 404 を返す（403 は存在を漏らす）。`created_by` は表示と監査のためのもので、認可に使わない（ADR-001 §3、ADR-002）。
+- 認証は passkey だけの招待制で、パスワード・OAuth・Cloudflare Access は使わない（ADR-001 §2）。登録の経路は、初回の owner（`INITIAL_REGISTRATION_TOKEN`）、招待リンク、ログイン中の端末追加の 3 つだけ。
+- 本番 URL と WebAuthn の RP_ID は `matatabetai.shiraoka.workers.dev`。passkey を登録した後にホストを変えると既存の credential がすべて無効になるので、`wrangler.jsonc` の `name` / `vars.RP_ID` / `vars.ORIGIN` は変えない。custom domain へ移るなどで変えるなら、先に credential の移し方を ADR で決める。
+- 写真は private R2 に置き、Worker が中継して配る。public bucket・`r2.dev`・公開オリジン前提の画像変換は使わず、縮小はクライアントで行う（ADR-004）。
+- Cron Triggers は kokemusu への日次投稿（ADR-013）の 1 本だけにし、ほかの定期実行は持たない（Workers Free の Cron はアカウントで 5 本）。
+- デプロイは Workers Builds（キーレス）で、`main` への merge が build・本番 D1 への migration の適用・deploy まで進む。GitHub に Cloudflare の資格情報は置かない。非本番ブランチのビルドは OFF にしてある（preview も本番 D1 を掴むため）。Workers Builds は CI を待たないので、`main` が green であることは ruleset（PR 必須・required check `ci`・force push 禁止・bypass なし）が守る。D1 は本番の `matatabetai` 1 つで、staging を足すなら `matatabetai-staging` にする。
+
+## コマンドと罠
+
+- 開発はコンテナ内で行う（起動は `./up.sh`）。ルートから `pnpm dev -- --host 0.0.0.0`（ホストからは http://localhost:5573/）、`pnpm check`、`pnpm test`、`pnpm build`。CI は `bash .claude/hooks/check-status.sh` と `pnpm run ci` を走らせる。format と lint は入れていない。ローカルの変数は `packages/web/.dev.vars`（`.dev.vars.example` をコピーする）。
+- `worker-configuration.d.ts` は gitignore した生成物で、`pnpm check`（または `pnpm types`）が `wrangler.jsonc` から作る。clone の直後や `wrangler.jsonc` を変えた後に型が合わなければ流し直す。
+- ホストで開いたセッションでは、編集と git はホストで行い、pnpm・npx・wrangler などは `docker compose exec -T dev <コマンド>` でコンテナに投げる。ホストで直に叩くと `require-container` hook が止める（依存のコードが隔離の外で動き、コンテナの `node_modules` も壊れる）。作業ツリーはコンテナと共有しているので、ブランチの切り替えはコンテナ側にも効く。
+- `pnpm e2e` は Playwright の 4 spec で、ローカル D1 の dev データを全部消す（持ち主が dev で登録した passkey も消える）。消えて困るなら、先に `packages/web/.wrangler/state` を退避する。CI では回さない（`packages/web/e2e/README.md`）。
+- migration（`packages/web/drizzle/`）を書く前に skill `cloudflare-d1-drizzle-migration` を読む。生成は `packages/web` で `pnpm db:generate --name <要約>`、ホストのセッションからは `docker compose exec -T dev pnpm -C packages/web db:generate --name <要約>`（どちらも `--` を挟むと drizzle-kit が落ちる）。ローカルへの適用は `pnpm db:migrate`。本番への適用は merge 後に Workers Builds が行う。人手で当てる経路（`docs/local-dev.md`）は持ち主が使う。
+
+## 書き方
+
+- ドメインは型で不正な状態を表せないようにする。状態は Discriminated Union で表し、分岐の網羅を型で保証する（例: `packages/web/worker/domain/link-preview.ts`）。制約は Zod で検証し、検証済みの値は `unique symbol` の Branded Type で区別する（例: `meal.ts`）。ロジックは純粋関数に寄せ、I/O は境界に置く。
+- 失敗しうる関数は、エラーを `neverthrow` の `Result` で返し、`throw` で伝えない。失敗しない関数は `Result` で包まない。`any` と `class` は使わない。抽象化は今の要件に要る分だけにする。型と関数名で伝わることを、コメントや文書に書かない。
+- ユニットテスト（vitest）は純粋関数の意味を固定するもので、I/O を持ち込まず、モックもしない。モックが要るならそれは e2e の領域。型で保証済みのことはテストにしない。e2e は配線と「存在の事実」を見る数本に保ち、ドメインの意味・見た目の動き・入力検証の網羅は入れない。
+- UI はブラウザのネイティブ機能を先に使う（skill `modern-web-guidance`。React は `vercel-react-best-practices`）。Baseline Newly available まで使ってよく、polyfill と重い fallback は入れない。
+- API は記憶で断定せず、公式 docs で確かめる（`cloudflare-docs` MCP、`context7` MCP、各サイトの `/llms.txt`）。コンテナの firewall は allowlist 外の URL を通さない。
+
+## git と merge
+
+- `claude/<type>-<topic>` に commit し、push して `gh pr create` する。commit の subject と PR の題は Conventional Commits で書く（説明は日本語でよい）。squash の subject には、commit が 1 つなら commit の subject、2 つ以上なら PR の題が使われる。PR 本文には計画と確かめたことを書き、PR の URL を報告する。コンテナでは PR 本文の修正を `gh pr comment` で行う（古い gh では `gh pr edit` が落ちる）。
+- arm の前に、コンテナで `pnpm run ci` を通す。`packages/web/` か依存（`package.json`、`pnpm-lock.yaml`）を変える PR は `pnpm e2e` も流し、結果を PR に書く。
+- 次の行の関門に当たらない PR は、それらが通り、`gh pr checks` で CI が green になったのを確かめたら、`gh pr merge --auto --squash <PR番号>` で arm してよい（`--auto` は required check `ci` が通るまで merge を待たせる）。持ち主の「merge まで進めて」は、関門の無い PR ではこの arm までを含む。コンテナの gh（2.23）は、green で clean な PR への `--auto` を「Pull request is in clean status」で弾く。弾かれたときだけ `gh pr merge --squash <PR番号>` を使う（hook が clean を確かめる）。それ以外の `--auto` なしの merge と `--admin` は使わない（hook `guard-pr-merge` が止める）。持ち主に merge を頼まれたときは `/merge` の手順で進める。
+- `packages/web/drizzle/`、`.github/**`、`.claude/**`、`docs/adr/**` を触る PR（関門のある PR）は、自分から arm しない。持ち主が差分を見たうえで merge を頼んだときだけ、`/merge` で arm する。PR ができる前に言われた「merge まで進めて」は、関門のある PR については差分を見たことにならない。migration の PR はさらに、merge の直前に持ち主がホストで `node ~/.config/d1-backup/d1-bookmark.mjs matatabetai <PR番号>` を打ち、D1 Time Travel の bookmark が PR にコメントされるまで arm しない。ホストのセッションでも、このコマンドは Claude が打たずに持ち主が打つ（コンテナには Cloudflare の資格情報もない。bookmark が無ければ hook も止める）。migration の PR 本文には事後確認の SQL を書き、既存行の書き換え・テーブルの再構築・DROP を含むなら戻し方も書く。
+- token は印字しない・URL に埋めない・`gh auth login` しない。コンテナでは token は `./shell.sh` が開いたシェルにだけあり、push が 401 なら回避せず、持ち主に `./shell.sh` を開いてもらう。ホストでは持ち主の gh の認証で push と PR 操作ができる。
+- `.github/workflows/**` は持ち主がホストで変える（コンテナの token には workflows 権限がない）。CI の中身は `package.json` の `ci` script、`.node-version`、`.claude/hooks/` で変えられる。
+- okayus-skills はコンテナに読み取り専用でマウントされている（このリポに複製しない）。ホストのセッションで skill が見つからなければ `../okayus-skills/skills/<name>/SKILL.md` を読む。`cloudflare-workers-passkey-auth`・`cloudflare-workers-space-membership-invite`・`cloudflare-r2-private-image-upload` の `UNVERIFIED:` の項目や、skill の誤り・新しい罠を確かめたら、直す内容に `(verified YYYY-MM-DD in matatabetai)` を添えて PR 本文か報告に書く。SKILL.md の編集・`metadata.version` の更新・commit / PR はホストで `../okayus-skills` に対して行い（`feat(<skill>): … を還元`）、このリポの PR とは分ける。skill に無い話題は、新しい skill の候補として `docs/roadmap.md` に書く。

@@ -20,7 +20,9 @@ docker exec -it matatabetai-dev zsh   # token 無しで入りたいとき
 - 初回は `cp packages/web/.dev.vars.example packages/web/.dev.vars` して `SESSION_SECRET`（`openssl rand -hex 32`）と `INITIAL_REGISTRATION_TOKEN`（任意の文字列）を埋め、`pnpm db:migrate` でローカル D1 に migration を当てる。`ORIGIN=http://localhost:5573` はホストのブラウザで開く URL に合わせる（CSRF と WebAuthn の origin 検査がこれと比較する）
 - dev サーバーはコンテナ内で `pnpm dev -- --host 0.0.0.0` → ホストのブラウザから **http://localhost:5573/**（5173 = 汎用 Vite、5273 = kokemusu、5373 = mazuoboeru、5473 = nyalog と衝突しないため）
 - コンテナ内 `claude` の初回認証は OAuth URL をホストブラウザで開いてコードを貼る。auth は named volume `matatabetai_claude-config` に永続化され `docker compose down` でも消えない。project MCP（`cloudflare-docs` / `context7`）は初回に対話セッションで trust 承認が要る（`claude mcp list` が `⏸ Pending approval` → 承認後 `✔ Connected`）
-- コンテナ内の claude は `bypassPermissions` が既定（起動 command が container-scope の settings に書く）。その下でも `.claude/settings.json` の **deny**（force push・`main` への push・`--delete`・`gh auth`・`gh api`）は効く。allow は bypass では無効（ホスト側セッション向け）。merge は deny ではなく運用で縛る — `gh pr merge --auto --squash` のみ・例外は CLAUDE.md 参照（サーバー側の境界は ruleset、ADR-001 改訂 2026-08-24）
+- コンテナ内の claude は `bypassPermissions` が既定（起動 command が container-scope の settings に書く）。その下でも `.claude/settings.json` の deny（force push・`main` への push・`--delete`・`gh auth`・`gh api`・`npx skills update`）と PreToolUse hook は効く。hook は `block-main-commit.py`（main への commit / push）、`require-container.py`（ホストでの pnpm など）、`guard-pr-merge.sh`（`--auto --squash <PR番号>` 以外の merge、ほかのリポの PR の merge、24 時間以内の bookmark コメントが無い migration PR の merge。コンテナの gh 2.23 は clean な PR への `--auto` を弾くので、clean な PR への `--auto` なしの `--squash` は通す）、`guard-push-delete.sh`（リモートのブランチを消す push）。後の 2 本は mazuoboeru と同じもので、命令の位置にある `gh pr merge` / `git push` だけを見る（heredoc の本文や他の命令の引数の中は見ない）。`onFailure: "block"` なので、hook が起動しないときや時間切れのときも止める。判定表のテストは `.claude/hooks/__tests__/` にあり、手で回す。サーバー側の境界は ruleset（ADR-001 改訂 2026-08-24）
+- allow は bypass では効かず、ホストのセッションにだけ効く。2026-11-08 に pnpm・node・npx・tsx・wrangler の allow を外し、`docker compose exec` は `dev` サービスに直接続く形だけにした。ホストには wrangler のログインがあり、`Bash(node:*)` は既定のモードで `node …/wrangler.js d1 … --remote` のような本番への操作を確認なしで通しえた（require-container hook は先頭の `wrangler` を止めるが、`node` は止めない）。`docker compose exec:*` は auto mode でも外れず、`-u root` での実行も確認なしで通していた。`git checkout` の allow も外した。`git checkout -- .` は未 commit の変更を確認なしで捨てうるうえ、ブランチの切り替えは `git switch` の allow で足りる
+- PR と CI の状態は `gh pr view` / `gh pr checks` で見る。fine-grained PAT は Checks REST API を呼べず、`gh api` は deny している
 - 新しい外部ドメインに繋ぐ必要が出たら `.docker/init-firewall.sh` の allowlist に追記 → `docker compose down && docker compose build && ./up.sh`。FATAL list は解決できないと起動が止まるので最小限に。docs サイトは OPTIONAL list へ
 - `docker compose` は**プロジェクト直下で `-f` なしで実行**する。`-f` を付けると `docker-compose.override.yml`（okayus-skills のマウント）が黙って外れる
 - セッション開始時に `.claude/hooks/session-start.sh` が `docs/status.md` と `docs/log.md` の先頭を注入する（コンテナでも同じ — リポ内のファイルなので再ビルド不要）。auto memory と session はホストとコンテナで別々なので、両方が知るべきことはリポ（status hub / ADR）に書く
@@ -30,25 +32,25 @@ docker exec -it matatabetai-dev zsh   # token 無しで入りたいとき
 firewall は default-deny なので「docs を見に行く」には経路が要る（skill `cloudflare-mcp-claude-tooling`）。
 
 1. **MCP**: `cloudflare-docs`（Cloudflare 公式、認証不要）と `context7`（`https://mcp.context7.com/mcp`、キー不要。MDN・Hono・Drizzle・React・Vite・Cloudflare Workers を横断）
-2. **WebFetch**: OPTIONAL allowlist のホストだけ取得できる — `developer.mozilla.org` `react.dev` `hono.dev` `orm.drizzle.team` `vite.dev` `vitest.dev` `zod.dev` `developer.chrome.com` `web.dev` `developers.cloudflare.com`。`llms.txt` を持つサイト（hono / drizzle / react / vite / vitest / zod / cloudflare）は目次から入る
+2. **WebFetch**: OPTIONAL allowlist のホストだけ取得できる — `developer.mozilla.org` `react.dev` `hono.dev` `orm.drizzle.team` `vite.dev` `vitest.dev` `zod.dev` `developer.chrome.com` `web.dev` `developers.cloudflare.com`。`llms.txt` を持つサイト（hono / drizzle / react / vite / vitest / zod / cloudflare）は目次から入る（`llms-full.txt` は巨大なので最後の手段）
 3. **WebSearch**: Anthropic 側で実行されるので egress 不要（タイトルと URL だけ返る）
 
-`modern-web-guidance`（Google Chrome、Apache-2.0）は project scope `.claude/skills/modern-web-guidance/` に同梱。HTML / CSS / UI を書く前に `search` で引く（`npx -y modern-web-guidance@latest …` を実行する。registry は FATAL allowlist 済み）。更新は `npx skills update`、出自は `skills-lock.json`。
+`modern-web-guidance`（Google Chrome、Apache-2.0）は project scope `.claude/skills/modern-web-guidance/` に同梱。HTML / CSS / UI を書く前に `search` で引く（`npx -y modern-web-guidance@latest …` を実行する。registry は FATAL allowlist 済み）。third-party skill は `.claude/skills/` に実体を置き（symlink にしない）、`skills-lock.json` を commit し、足すのも更新するのも単独 PR にする。出自と版は `skills-lock.json`。modern-web-guidance の更新はコンテナ内で `npx skills add GoogleChrome/modern-web-guidance --skill modern-web-guidance -a claude-code --copy -y` を打ち直し、単独 PR にする。`npx skills update` は本体を gitignore 済みの `.agents/` に移して `.claude/skills/` 側を symlink にし、clone 先で壊れるので deny している。
 
-## okayus-skills のマウント（読み書き可）
+## okayus-skills のマウント（読み取り専用）
 
-`docker-compose.override.yml`（gitignored）が `../okayus-skills/skills` を `~/.claude/skills` に **rw** でマウントする。コンテナ内で skill を直すと、ホストの `okayus-skills` 作業ツリーに直接反映される。commit / PR は `cd ../okayus-skills` でホストから行う。還元が一巡したら `:ro` に戻してよい。
+`docker-compose.override.yml`（gitignored）が `../okayus-skills/skills` を `~/.claude/skills` に `:ro` でマウントする（2026-09-20 に rw から戻した）。ホストの `~/.claude/skills` にも同じ場所への symlink があるので、書き込み可だと、権限確認なしで動くコンテナが、資格情報を持つホストの Claude が読む指示を書き換えられる。skill の直しはコンテナが内容を PR 本文か報告に書き、編集と commit / PR はホストで `cd ../okayus-skills` して行う。ほかのプロジェクト向けで、このリポで使わない 5 skill は `.claude/settings.json` の `skillOverrides` で `name-only` にし、説明文を skill の一覧に載せない。
 
 ## Playwright e2e
 
 chromium は image に焼き込み済み（`PLAYWRIGHT_VERSION` build arg = `1.62.1`。1.59.1 は node:24 だと `install chromium` がダウンロード完了直後に永遠に止まる（node:22 では問題なし、2026-08-22 確認）ので使わない）。web パッケージの `@playwright/test` を同じバージョンに pin し、上げるときは両方を同時に上げて `docker compose build`。
 
 ```bash
-pnpm e2e          # build → wrangler dev（ビルド成果物、127.0.0.1:5183）→ 3 spec（初回登録〜招待〜ログイン / 他スペース 404 / セキュリティヘッダ）
+pnpm e2e          # build → wrangler dev（ビルド成果物、127.0.0.1:5183）→ 4 spec（golden path / 他スペース 404 / URL プレビュー / セキュリティヘッダ）
 pnpm e2e:server   # サーバーだけ立てておくと 2 回目以降が速い
 ```
 
-ローカル D1 の dev データは**全消し**される（global-setup）。vars は `--var` で渡すので `.dev.vars` は使わない。詳細と詰まりどころは `packages/web/e2e/README.md`（skill `cloudflare-workers-e2e-playwright` / `playwright-e2e-in-docker-sandbox`）。CI では回さない — merge 前にここで流す。
+ローカル D1 の dev データは**全消し**される（global-setup。dev で登録した passkey も消える）。e2e は dev と同じ `packages/web/.wrangler/state` を使うので、消えて困るなら先に退避する。vars は `--var` で渡すので `.dev.vars` は使わない。詳細と詰まりどころは `packages/web/e2e/README.md`（skill `cloudflare-workers-e2e-playwright` / `playwright-e2e-in-docker-sandbox`）。CI では回さない — merge 前にここで流す。
 
 ## GitHub token の運用
 

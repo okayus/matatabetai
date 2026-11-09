@@ -119,3 +119,10 @@ mazuoboeru（リトライしない・欠けたまま）と違う判断をする�
 - **受け側に Idempotency-Key を頼む** — 受け側が「必要になってから」と決めている（kokemusu ADR-0002）。二重投稿の受容で足りる
 - **Queues / Workflows** — 1 晩数 POST・数百 ms に過剰（mazuoboeru と同じ判断）
 - **`kind` を送らない（未分類）** — 持ち主の選択で `output`
+
+## 補記（2026-11-09）: 送信の経路を Service Binding に、merge 前のバックアップを bookmark の関門に
+
+本文の決定は変えない。実装の前に分かった 2 点を足す。段取りは [plans/kokemusu-push.md](../plans/kokemusu-push.md)。
+
+- **送信の経路**: kokemusu への送信は Service Binding（`services` の `KOKEMUSU`）で行う。matatabetai と kokemusu は同じ zone（`shiraoka.workers.dev`）にいて、同じ zone の別の Worker へのグローバル `fetch()` は相手に届かず、404（`error code: 1042`）が返る。mazuoboeru の日次投稿は、互換フラグ `global_fetch_strictly_public`（okayus/mazuoboeru#105）では届かず、Service Binding（#106）で届いた（kokemusu の D1 で 2026-11-07 まで到着を確認）。URL・method・Bearer・本文の契約は変えず、経路だけを binding にする（skill `cloudflare-workers-pat-bearer-auth` 0.4.0）。§8 の境界は binding を受け取り、非 2xx のときは応答本文の先頭もログに出す（`error code: 1042` は本文が名乗る。token と送る本文は出さない）。
+- **merge 前のバックアップ**: 「影響」の「PR 本文に runbook のバックアップ手順」は、CLAUDE.md の migration の関門に置き換わった。merge の直前に持ち主がホストで `node ~/.config/d1-backup/d1-bookmark.mjs matatabetai <PR番号>` を打ち、D1 Time Travel の bookmark を PR にコメントする（hook `guard-pr-merge` も 24 時間以内の bookmark を確かめる）。D1 の週次 export はホストの timer が続ける（2026-09-20〜）。

@@ -57,7 +57,7 @@
 1. ~~認証 / 認可 / 写真~~ → ✅ passkey / per-space + 招待リンク / private R2 + Worker proxy（[ADR-001](adr/001-project-initiation.md)、2026-08-22）
 2. ~~push / PR 経路~~ → ✅ 1 リポ限定 PAT を 1Password で注入（ADR-001 改訂、2026-08-23）
 3. ~~リポの可視性~~ → ✅ public（2026-08-23）+ `protect-main` / `no-force-push-anywhere` ruleset + auto-merge opt-in（ADR-001 改訂 2026-08-24）
-4. ~~ドメイン~~ → ✅ workers.dev のまま（2026-09-01。`matatabetai.shiraoka.workers.dev` に RP_ID/ORIGIN 固定済みで作業なし。後から custom domain へ移るなら credential 移行戦略ごと再検討 — CLAUDE.md「RP_ID / ORIGIN」）
+4. ~~ドメイン~~ → ✅ workers.dev のまま（2026-09-01。`matatabetai.shiraoka.workers.dev` に RP_ID/ORIGIN 固定済みで作業なし。後から custom domain へ移るなら credential 移行戦略ごと再検討 — CLAUDE.md「確定済みの決定」）
 5. ~~デプロイ経路~~ → ✅ Workers Builds（キーレス）へ移行済み（ADR-001 §1、#33。GitHub 側に Cloudflare の credential は無い）
 6. ~~写真のバックアップ~~ → ✅ 受容（アプリが持つのは縮小コピーで原本はスマホに残る。[ADR-004](adr/004-meal-photos-r2.md) §7、2026-09-01）
 7. レシピ本文の取り込み — JSON-LD（schema.org/Recipe）路線で調査を先行（人間: cookpad 等の規約原文をホストのブラウザで確認）→ ADR で決める（2026-09-03。番号は起草時に採る。Readability 全文抽出は採らない）
