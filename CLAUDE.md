@@ -27,7 +27,7 @@
 - 開発はコンテナ内で行う（起動は `./up.sh`）。ルートから `pnpm dev -- --host 0.0.0.0`（ホストからは http://localhost:5573/）、`pnpm check`、`pnpm test`、`pnpm build`。CI は `bash .claude/hooks/check-status.sh` と `pnpm run ci` を走らせる。format と lint は入れていない。ローカルの変数は `packages/web/.dev.vars`（`.dev.vars.example` をコピーする）。
 - `worker-configuration.d.ts` は gitignore した生成物で、`pnpm check`（または `pnpm types`）が `wrangler.jsonc` から作る。clone の直後や `wrangler.jsonc` を変えた後に型が合わなければ流し直す。
 - ホストで開いたセッションでは、編集と git はホストで行い、pnpm・npx・wrangler などは `docker compose exec -T dev <コマンド>` でコンテナに投げる。ホストで直に叩くと `require-container` hook が止める（依存のコードが隔離の外で動き、コンテナの `node_modules` も壊れる）。作業ツリーはコンテナと共有しているので、ブランチの切り替えはコンテナ側にも効く。
-- `pnpm e2e` は Playwright の 4 spec で、ローカル D1 の dev データを全部消す（持ち主が dev で登録した passkey も消える）。消えて困るなら、先に `packages/web/.wrangler/state` を退避する。CI では回さない（`packages/web/e2e/README.md`）。
+- `pnpm e2e` は Playwright の 5 spec で、ローカル D1 の dev データを全部消す（持ち主が dev で登録した passkey も消える）。消えて困るなら、先に `packages/web/.wrangler/state` を退避する。CI では回さない（`packages/web/e2e/README.md`）。
 - migration（`packages/web/drizzle/`）を書く前に skill `cloudflare-d1-drizzle-migration` を読む。生成は `packages/web` で `pnpm db:generate --name <要約>`、ホストのセッションからは `docker compose exec -T dev pnpm -C packages/web db:generate --name <要約>`（どちらも `--` を挟むと drizzle-kit が落ちる）。ローカルへの適用は `pnpm db:migrate`。本番への適用は merge 後に Workers Builds が行う。人手で当てる経路（`docs/local-dev.md`）は持ち主が使う。
 
 ## 書き方

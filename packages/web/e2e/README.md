@@ -1,16 +1,17 @@
 # e2e（Playwright）
 
-配線と「存在の事実」だけを見る 4 spec。ドメインの意味は `worker/**/*.test.ts`（vitest）。
+配線と「存在の事実」だけを見る 5 spec。ドメインの意味は `worker/**/*.test.ts`（vitest）。
 
 - `golden-path` — 初回登録 → リロードで残る → 記録（写真・サジェスト・編集・また記録する・削除）→ ホームの検索（♥ / タグ AND / 料理名、URL に残る）→ ふりかえりの集計と札・行からホームへ → 招待リンク → 別ブラウザが招待から参加 → メンバーに並ぶ → ログアウト → ログイン
 - `authorization-boundary` — 他スペースは API 404（本文固定）+ UI のアクセス拒否
 - `link-preview` — 投稿 → 応答後の OGP 取得 → カード（画像は private R2 経由）/ 取れない URL はプレーンリンクのまま
 - `security-headers` — CSP / X-Frame-Options / nosniff / Referrer-Policy が `/`・`/api`・`/health` に付く、未知の `/api/*` が JSON、CSRF Origin 検査
+- `fatal` — 描画中の例外で白紙にならない。`/api` を `page.route` で差し替えて（セッションあり + `photos` を欠いた記録）描画を落とす → 「表示できませんでした」と「再読み込み」が出て、アプリは外れている（`main.tsx` の `onUncaughtError` → `FatalScreen`）→ 差し替えを外して「再読み込み」を押すとアプリが戻る。アカウントも D1 の行も作らない
 
 ## 動かし方（コンテナ内）
 
 ```bash
-pnpm e2e            # build → wrangler dev（127.0.0.1:5183、ビルド成果物）→ 4 spec
+pnpm e2e            # build → wrangler dev（127.0.0.1:5183、ビルド成果物）→ 5 spec
 pnpm e2e:server     # サーバーだけ立てておく（2 回目以降の pnpm e2e が速い。reuseExistingServer）
 ```
 
