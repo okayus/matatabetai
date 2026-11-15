@@ -46,7 +46,7 @@ firewall は default-deny なので「docs を見に行く」には経路が要�
 chromium は image に焼き込み済み（`PLAYWRIGHT_VERSION` build arg = `1.62.1`。1.59.1 は node:24 だと `install chromium` がダウンロード完了直後に永遠に止まる（node:22 では問題なし、2026-08-22 確認）ので使わない）。web パッケージの `@playwright/test` を同じバージョンに pin し、上げるときは両方を同時に上げて `docker compose build`。
 
 ```bash
-pnpm e2e          # build → wrangler dev（ビルド成果物、127.0.0.1:5183）→ 4 spec（golden path / 他スペース 404 / URL プレビュー / セキュリティヘッダ）
+pnpm e2e          # build → wrangler dev（ビルド成果物、127.0.0.1:5183）→ 5 spec（golden path / 他スペース 404 / URL プレビュー / セキュリティヘッダ / 描画中の例外の再読み込み画面）
 pnpm e2e:server   # サーバーだけ立てておくと 2 回目以降が速い
 ```
 
